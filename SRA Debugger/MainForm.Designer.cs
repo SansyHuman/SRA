@@ -305,7 +305,7 @@
             // vectorRegistersToolStripMenuItem
             // 
             vectorRegistersToolStripMenuItem.Name = "vectorRegistersToolStripMenuItem";
-            vectorRegistersToolStripMenuItem.Size = new Size(270, 34);
+            vectorRegistersToolStripMenuItem.Size = new Size(242, 34);
             vectorRegistersToolStripMenuItem.Text = "Vector registers";
             vectorRegistersToolStripMenuItem.Click += vectorRegistersToolStripMenuItem_Click;
             // 

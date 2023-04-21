@@ -605,7 +605,7 @@ namespace SRA_Simulator
             }
 
             ulong newMax = heapSegment.MaxAddress + size;
-            if (newMax >= stackSegment.MinAddress)
+            if (newMax >= stackSegment.MinAddress || newMax < heapSegment.MinAddress - 1)
             {
                 return unchecked((ulong)-1L);
             }

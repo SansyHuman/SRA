@@ -61,7 +61,7 @@ namespace SRA_Debugger
                 return;
             }
 
-            ulong currInstIndex = (cpu.Registers.PC - cpu.Entrypoint) / 4;
+            ulong currInstIndex = (cpu.Registers.PC - cpu.TextSegmentStart) / 4;
 
             if (initialize)
             {
