@@ -1,10 +1,11 @@
-﻿using System.Text;
+﻿using System.Net;
+using System.Text;
 
 namespace SRA_Assembler
 {
     public enum Segment
     {
-        Data, Text, KData, KText, Uninitialized
+        Data, Text, KData, KText, KTextStart, Uninitialized
     }
 
     public enum SymbolType
@@ -575,15 +576,29 @@ namespace SRA_Assembler
 
             byte[] dataBin = null;
             byte[] textBin = null;
+            
+            byte[] kdataBin = null;
+            byte[] ktextBin = null;
+            byte[] ktextStartBin = null;
 
             ulong dataSize = 0U;
             ulong textSize = 0U;
 
+            ulong kdataSize = 0U;
+            ulong ktextSize = 0U;
+            ulong ktextStartSize = 0U;
+            uint ktextType = ProgramHeader.PT_KLOAD;
+            ulong ktextStartAddr = 0x0080_0000_0000U;
+
             using (StreamReader fread = new StreamReader(inputFile))
             {
-                using (MemoryStream data = new MemoryStream(), text = new MemoryStream())
+                using (MemoryStream data = new MemoryStream(), text = new MemoryStream(),
+                    ktextStart = new MemoryStream(), ktextOther = new MemoryStream(),
+                    kdata = new MemoryStream())
                 {
-                    using (BinaryWriter dwrite = new BinaryWriter(data), twrite = new BinaryWriter(text))
+                    using (BinaryWriter dwrite = new BinaryWriter(data), twrite = new BinaryWriter(text),
+                        ktswrite = new BinaryWriter(ktextStart), ktowrite = new BinaryWriter(ktextOther),
+                        kdwrite = new BinaryWriter(kdata))
                     {
                         string currLabel = string.Empty;
                         bool useLabel = false;
@@ -688,6 +703,27 @@ namespace SRA_Assembler
                                 {
                                     currSegment = Segment.Text;
                                 }
+                                else if (code == ".kdata")
+                                {
+                                    currSegment = Segment.KData;
+                                    currAlignment = -1;
+                                }
+                                else if (code.StartsWith(".ktext"))
+                                {
+                                    currSegment = Segment.KText;
+                                    if (code != ".ktext") // with address
+                                    {
+                                        string address = code.Substring(6).Trim();
+                                        if (!address.StartsWith("0x") && !address.StartsWith("0X"))
+                                        {
+                                            throw new Exception($"{MakeError(line, flineOriginal)}: address of .ktext should be hex");
+                                        }
+
+                                        ktextType = ProgramHeader.PT_KLOADSTART;
+                                        ktextStartAddr = LiteralToDword(address, line, flineOriginal);
+                                        currSegment = Segment.KTextStart;
+                                    }
+                                }
                                 else
                                 {
                                     throw new Exception($"{MakeError(line, flineOriginal)}: segment specifier should exist before any code");
@@ -698,12 +734,15 @@ namespace SRA_Assembler
                                     throw new Exception($"{MakeError(line, flineOriginal)}: no actual code after label");
                                 }
                             }
-                            else if (currSegment == Segment.Data)
+                            else if (currSegment == Segment.Data || currSegment == Segment.KData)
                             {
                                 string[] args = code.Split(
                                     InstructionSyntax.whitespace,
                                     StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries
                                     );
+
+                                MemoryStream dataStream = currSegment == Segment.Data ? data : kdata;
+                                BinaryWriter dataWriter = currSegment == Segment.Data ? dwrite : kdwrite;
 
                                 if (args[0] == ".data")
                                 {
@@ -734,6 +773,48 @@ namespace SRA_Assembler
                                         throw new Exception($"{MakeError(line, flineOriginal)}: no actual code after label");
                                     }
                                 }
+                                else if (args[0] == ".kdata")
+                                {
+                                    if (args.Length != 1)
+                                    {
+                                        throw new Exception($"{MakeError(line, flineOriginal)}: .kdata should be used alone");
+                                    }
+
+                                    currSegment = Segment.KData;
+                                    currAlignment = -1;
+
+                                    if (useLabel)
+                                    {
+                                        throw new Exception($"{MakeError(line, flineOriginal)}: no actual code after label");
+                                    }
+                                }
+                                else if (args[0] == ".ktext")
+                                {
+                                    if (args.Length == 1)
+                                    {
+                                        currSegment = Segment.KText;
+                                    }
+                                    else if (args.Length == 2)
+                                    {
+                                        if (ktextType == ProgramHeader.PT_KLOADSTART)
+                                        {
+                                            throw new Exception($"{MakeError(line, flineOriginal)}: there should be only one .ktext with address");
+                                        }
+
+                                        if (!args[1].StartsWith("0x") && !args[1].StartsWith("0X"))
+                                        {
+                                            throw new Exception($"{MakeError(line, flineOriginal)}: address of .ktext should be hex");
+                                        }
+
+                                        ktextType = ProgramHeader.PT_KLOADSTART;
+                                        ktextStartAddr = LiteralToDword(args[1], line, flineOriginal);
+                                        currSegment = Segment.KTextStart;
+                                    }
+                                    else
+                                    {
+                                        throw new Exception($"{MakeError(line, flineOriginal)}: .ktext has more arguments than needed");
+                                    }
+                                }
                                 else if (args[0] == ".dword")
                                 {
                                     if (args.Length < 2)
@@ -746,8 +827,8 @@ namespace SRA_Assembler
                                     }
 
                                     ulong value = LiteralToDword(args[1], line, flineOriginal);
-                                    long pos = MoveToByteBoundary(data, 8, currAlignment);
-                                    dwrite.Write(value);
+                                    long pos = MoveToByteBoundary(dataStream, 8, currAlignment);
+                                    dataWriter.Write(value);
 
                                     prevDataSize = 8;
                                     prevData = value;
@@ -756,7 +837,7 @@ namespace SRA_Assembler
                                     {
                                         symbolTable[currLabel] = new SymbolTableElement(
                                             currLabel,
-                                            SymbolType.Data,
+                                            currSegment == Segment.Data ? SymbolType.Data : SymbolType.KData,
                                             isGlobal ? SymbolScope.Global : SymbolScope.Internal,
                                             (ulong)pos);
 
@@ -776,8 +857,8 @@ namespace SRA_Assembler
                                     }
 
                                     uint value = LiteralToWord(args[1], line, flineOriginal);
-                                    long pos = MoveToByteBoundary(data, 4, currAlignment);
-                                    dwrite.Write(value);
+                                    long pos = MoveToByteBoundary(dataStream, 4, currAlignment);
+                                    dataWriter.Write(value);
 
                                     prevDataSize = 4;
                                     prevData = value;
@@ -786,7 +867,7 @@ namespace SRA_Assembler
                                     {
                                         symbolTable[currLabel] = new SymbolTableElement(
                                             currLabel,
-                                            SymbolType.Data,
+                                            currSegment == Segment.Data ? SymbolType.Data : SymbolType.KData,
                                             isGlobal ? SymbolScope.Global : SymbolScope.Internal,
                                             (ulong)pos);
 
@@ -806,8 +887,8 @@ namespace SRA_Assembler
                                     }
 
                                     ushort value = LiteralToHalf(args[1], line, flineOriginal);
-                                    long pos = MoveToByteBoundary(data, 2, currAlignment);
-                                    dwrite.Write(value);
+                                    long pos = MoveToByteBoundary(dataStream, 2, currAlignment);
+                                    dataWriter.Write(value);
 
                                     prevDataSize = 2;
                                     prevData = value;
@@ -816,7 +897,7 @@ namespace SRA_Assembler
                                     {
                                         symbolTable[currLabel] = new SymbolTableElement(
                                             currLabel,
-                                            SymbolType.Data,
+                                            currSegment == Segment.Data ? SymbolType.Data : SymbolType.KData,
                                             isGlobal ? SymbolScope.Global : SymbolScope.Internal,
                                             (ulong)pos);
 
@@ -836,8 +917,8 @@ namespace SRA_Assembler
                                     }
 
                                     byte value = LiteralToByte(args[1], line, flineOriginal);
-                                    long pos = MoveToByteBoundary(data, 1, currAlignment);
-                                    dwrite.Write(value);
+                                    long pos = MoveToByteBoundary(dataStream, 1, currAlignment);
+                                    dataWriter.Write(value);
 
                                     prevDataSize = 1;
                                     prevData = value;
@@ -846,7 +927,7 @@ namespace SRA_Assembler
                                     {
                                         symbolTable[currLabel] = new SymbolTableElement(
                                             currLabel,
-                                            SymbolType.Data,
+                                            currSegment == Segment.Data ? SymbolType.Data : SymbolType.KData,
                                             isGlobal ? SymbolScope.Global : SymbolScope.Internal,
                                             (ulong)pos);
 
@@ -866,8 +947,8 @@ namespace SRA_Assembler
                                     }
 
                                     float value = LiteralToFloat(args[1], line, flineOriginal);
-                                    long pos = MoveToByteBoundary(data, 4, currAlignment);
-                                    dwrite.Write(value);
+                                    long pos = MoveToByteBoundary(dataStream, 4, currAlignment);
+                                    dataWriter.Write(value);
 
                                     prevDataSize = 4;
                                     unsafe
@@ -879,7 +960,7 @@ namespace SRA_Assembler
                                     {
                                         symbolTable[currLabel] = new SymbolTableElement(
                                             currLabel,
-                                            SymbolType.Data,
+                                            currSegment == Segment.Data ? SymbolType.Data : SymbolType.KData,
                                             isGlobal ? SymbolScope.Global : SymbolScope.Internal,
                                             (ulong)pos);
 
@@ -899,8 +980,8 @@ namespace SRA_Assembler
                                     }
 
                                     double value = LiteralToDouble(args[1], line, flineOriginal);
-                                    long pos = MoveToByteBoundary(data, 8, currAlignment);
-                                    dwrite.Write(value);
+                                    long pos = MoveToByteBoundary(dataStream, 8, currAlignment);
+                                    dataWriter.Write(value);
 
                                     prevDataSize = 8;
                                     unsafe
@@ -912,7 +993,7 @@ namespace SRA_Assembler
                                     {
                                         symbolTable[currLabel] = new SymbolTableElement(
                                             currLabel,
-                                            SymbolType.Data,
+                                            currSegment == Segment.Data ? SymbolType.Data : SymbolType.KData,
                                             isGlobal ? SymbolScope.Global : SymbolScope.Internal,
                                             (ulong)pos);
 
@@ -930,8 +1011,8 @@ namespace SRA_Assembler
                                     string strLiteral = code.Substring(6).Trim();
                                     byte[] encode = LiteralToString(strLiteral, Encoding.ASCII, line, flineOriginal);
 
-                                    long pos = MoveToByteBoundary(data, 1, currAlignment);
-                                    dwrite.Write(encode);
+                                    long pos = MoveToByteBoundary(dataStream, 1, currAlignment);
+                                    dataWriter.Write(encode);
 
                                     prevDataSize = -1; // string literal does not support .repeat
 
@@ -939,7 +1020,7 @@ namespace SRA_Assembler
                                     {
                                         symbolTable[currLabel] = new SymbolTableElement(
                                             currLabel,
-                                            SymbolType.Data,
+                                            currSegment == Segment.Data ? SymbolType.Data : SymbolType.KData,
                                             isGlobal ? SymbolScope.Global : SymbolScope.Internal,
                                             (ulong)pos);
 
@@ -957,9 +1038,9 @@ namespace SRA_Assembler
                                     string strLiteral = code.Substring(7).Trim();
                                     byte[] encode = LiteralToString(strLiteral, Encoding.ASCII, line, flineOriginal);
 
-                                    long pos = MoveToByteBoundary(data, 1, currAlignment);
-                                    dwrite.Write(encode);
-                                    dwrite.Write((byte)0U); // null-terminated
+                                    long pos = MoveToByteBoundary(dataStream, 1, currAlignment);
+                                    dataWriter.Write(encode);
+                                    dataWriter.Write((byte)0U); // null-terminated
 
                                     prevDataSize = -1;
 
@@ -967,7 +1048,7 @@ namespace SRA_Assembler
                                     {
                                         symbolTable[currLabel] = new SymbolTableElement(
                                             currLabel,
-                                            SymbolType.Data,
+                                            currSegment == Segment.Data ? SymbolType.Data : SymbolType.KData,
                                             isGlobal ? SymbolScope.Global : SymbolScope.Internal,
                                             (ulong)pos);
 
@@ -985,9 +1066,9 @@ namespace SRA_Assembler
                                     string strLiteral = code.Substring(8).Trim();
                                     byte[] encode = LiteralToString(strLiteral, Encoding.UTF8, line, flineOriginal);
 
-                                    long pos = MoveToByteBoundary(data, 8, currAlignment);
-                                    dwrite.Write((ulong)encode.Length); // store the byte length of the string
-                                    dwrite.Write(encode);
+                                    long pos = MoveToByteBoundary(dataStream, 8, currAlignment);
+                                    dataWriter.Write((ulong)encode.Length); // store the byte length of the string
+                                    dataWriter.Write(encode);
 
                                     prevDataSize = -1;
 
@@ -995,7 +1076,7 @@ namespace SRA_Assembler
                                     {
                                         symbolTable[currLabel] = new SymbolTableElement(
                                             currLabel,
-                                            SymbolType.Data,
+                                            currSegment == Segment.Data ? SymbolType.Data : SymbolType.KData,
                                             isGlobal ? SymbolScope.Global : SymbolScope.Internal,
                                             (ulong)pos);
 
@@ -1019,8 +1100,8 @@ namespace SRA_Assembler
                                     {
                                         throw new Exception($"{MakeError(line, flineOriginal)}: argument after .space is too large");
                                     }
-                                    long pos = data.Position;
-                                    dwrite.Write(new byte[cnt]);
+                                    long pos = dataStream.Position;
+                                    dataWriter.Write(new byte[cnt]);
 
                                     prevDataSize = -1;
 
@@ -1028,7 +1109,7 @@ namespace SRA_Assembler
                                     {
                                         symbolTable[currLabel] = new SymbolTableElement(
                                             currLabel,
-                                            SymbolType.Data,
+                                            currSegment == Segment.Data ? SymbolType.Data : SymbolType.KData,
                                             isGlobal ? SymbolScope.Global : SymbolScope.Internal,
                                             (ulong)pos);
 
@@ -1057,20 +1138,20 @@ namespace SRA_Assembler
 
                                     for (ulong i = 0; i < cnt; i++)
                                     {
-                                        MoveToByteBoundary(data, prevDataSize, currAlignment);
+                                        MoveToByteBoundary(dataStream, prevDataSize, currAlignment);
                                         switch (prevDataSize)
                                         {
                                             case 1:
-                                                dwrite.Write((byte)prevData);
+                                                dataWriter.Write((byte)prevData);
                                                 break;
                                             case 2:
-                                                dwrite.Write((ushort)prevData);
+                                                dataWriter.Write((ushort)prevData);
                                                 break;
                                             case 4:
-                                                dwrite.Write((uint)prevData);
+                                                dataWriter.Write((uint)prevData);
                                                 break;
                                             case 8:
-                                                dwrite.Write(prevData);
+                                                dataWriter.Write(prevData);
                                                 break;
                                             default:
                                                 throw new Exception("Unknown error");
@@ -1083,7 +1164,7 @@ namespace SRA_Assembler
                                     {
                                         symbolTable[currLabel] = new SymbolTableElement(
                                             currLabel,
-                                            SymbolType.Data,
+                                            currSegment == Segment.Data ? SymbolType.Data : SymbolType.KData,
                                             isGlobal ? SymbolScope.Global : SymbolScope.Internal,
                                             (ulong)pos);
 
@@ -1145,8 +1226,22 @@ namespace SRA_Assembler
                                     throw new Exception($"{MakeError(line, flineOriginal)}: unknown data section instruction");
                                 }
                             }
-                            else if (currSegment == Segment.Text)
+                            else if (currSegment == Segment.Text || currSegment == Segment.KText || currSegment == Segment.KTextStart)
                             {
+                                BinaryWriter textWriter;
+                                if (currSegment == Segment.Text)
+                                {
+                                    textWriter = twrite;
+                                }
+                                else if (currSegment == Segment.KText)
+                                {
+                                    textWriter = ktowrite;
+                                }
+                                else // currSegment == Segment.KTextStart
+                                {
+                                    textWriter = ktswrite;
+                                }
+
                                 string[] args = code.Split(
                                     InstructionSyntax.whitespace,
                                     StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries
@@ -1181,8 +1276,54 @@ namespace SRA_Assembler
                                         throw new Exception($"{MakeError(line, flineOriginal)}: no actual code after label");
                                     }
                                 }
+                                else if (args[0] == ".kdata")
+                                {
+                                    if (args.Length != 1)
+                                    {
+                                        throw new Exception($"{MakeError(line, flineOriginal)}: .kdata should be used alone");
+                                    }
+
+                                    currSegment = Segment.KData;
+                                    currAlignment = -1;
+
+                                    if (useLabel)
+                                    {
+                                        throw new Exception($"{MakeError(line, flineOriginal)}: no actual code after label");
+                                    }
+                                }
+                                else if (args[0] == ".ktext")
+                                {
+                                    if (args.Length == 1)
+                                    {
+                                        currSegment = Segment.KText;
+                                    }
+                                    else if (args.Length == 2)
+                                    {
+                                        if (ktextType == ProgramHeader.PT_KLOADSTART)
+                                        {
+                                            throw new Exception($"{MakeError(line, flineOriginal)}: there should be only one .ktext with address");
+                                        }
+
+                                        if (!args[1].StartsWith("0x") && !args[1].StartsWith("0X"))
+                                        {
+                                            throw new Exception($"{MakeError(line, flineOriginal)}: address of .ktext should be hex");
+                                        }
+
+                                        ktextType = ProgramHeader.PT_KLOADSTART;
+                                        ktextStartAddr = LiteralToDword(args[1], line, flineOriginal);
+                                        currSegment = Segment.KTextStart;
+                                    }
+                                    else
+                                    {
+                                        throw new Exception($"{MakeError(line, flineOriginal)}: .ktext has more arguments than needed");
+                                    }
+                                }
                                 else if (args[0] == ".entry")
                                 {
+                                    if (currSegment != Segment.Text)
+                                    {
+                                        throw new Exception($"{MakeError(line, flineOriginal)}: .ktext segment cannot have entrypoint");
+                                    }
                                     if (args.Length < 2)
                                     {
                                         throw new Exception($"{MakeError(line, flineOriginal)}: no label after .entry");
@@ -1287,19 +1428,19 @@ namespace SRA_Assembler
 
                                             for (int i = 0; i < realInsts.Length; i++)
                                             {
-                                                twrite.Write(realInsts[i].ToBinary());
+                                                textWriter.Write(realInsts[i].ToBinary());
                                             }
                                         }
                                         else
                                         {
-                                            twrite.Write(syntax.ToBinary());
+                                            textWriter.Write(syntax.ToBinary());
                                         }
 
                                         if (useLabel)
                                         {
                                             symbolTable[currLabel] = new SymbolTableElement(
                                                 currLabel,
-                                                SymbolType.Text,
+                                                currSegment == Segment.Text ? SymbolType.Text : SymbolType.KText,
                                                 isGlobal ? SymbolScope.Global : SymbolScope.Internal,
                                                 (ulong)pos);
 
@@ -1318,8 +1459,16 @@ namespace SRA_Assembler
                         dataBin = data.GetBuffer();
                         textBin = text.GetBuffer();
 
+                        kdataBin = kdata.GetBuffer();
+                        ktextBin = ktextOther.GetBuffer();
+                        ktextStartBin = ktextStart.GetBuffer();
+
                         dataSize = (ulong)data.Length;
                         textSize = (ulong)text.Length;
+
+                        kdataSize = (ulong)kdata.Length;
+                        ktextSize = (ulong)ktextOther.Length;
+                        ktextStartSize = (ulong)ktextStart.Length;
                     }
                 }
 
@@ -1409,7 +1558,7 @@ namespace SRA_Assembler
             elfHeader.e_type = ELFHeader.ET_REL;
             elfHeader.e_entry = hasEntryPoint ? TEXT_START + symbolTable[entrypoint].Position : 0;
             elfHeader.e_phoff = elfHeader.e_ehsize;
-            elfHeader.e_phnum = 4; // text, data, reloc, symbol
+            elfHeader.e_phnum = 6; // text, data, ktext, kdata, reloc, symbol
 
             ProgramHeader textHeader = new ProgramHeader();
             textHeader.p_type = ProgramHeader.PT_LOAD;
@@ -1431,9 +1580,29 @@ namespace SRA_Assembler
             dataHeader.p_flags = ProgramHeader.PF_R | ProgramHeader.PF_W;
             dataHeader.p_align = 32;
 
+            ProgramHeader ktextHeader = new ProgramHeader();
+            ktextHeader.p_type = ktextType;
+            ktextHeader.p_offset = dataHeader.p_offset + dataHeader.p_filesz;
+            ktextHeader.p_vaddr = ktextStartAddr;
+            ktextHeader.p_paddr = 0;
+            ktextHeader.p_filesz = ktextSize + ktextStartSize;
+            ktextHeader.p_memsz = ktextSize + ktextStartSize;
+            ktextHeader.p_flags = ProgramHeader.PF_X | ProgramHeader.PF_R;
+            ktextHeader.p_align = 4;
+
+            ProgramHeader kdataHeader = new ProgramHeader();
+            kdataHeader.p_type = ProgramHeader.PT_KLOAD;
+            kdataHeader.p_offset = ktextHeader.p_offset + ktextHeader.p_filesz;
+            kdataHeader.p_vaddr = KDATA_START;
+            kdataHeader.p_paddr = 0;
+            kdataHeader.p_filesz = kdataSize;
+            kdataHeader.p_memsz = kdataSize;
+            kdataHeader.p_flags = ProgramHeader.PF_R | ProgramHeader.PF_W;
+            kdataHeader.p_align = 32;
+
             ProgramHeader relocHeader = new ProgramHeader();
             relocHeader.p_type = ProgramHeader.PT_RELOCTABLE;
-            relocHeader.p_offset = dataHeader.p_offset + dataHeader.p_filesz;
+            relocHeader.p_offset = kdataHeader.p_offset + kdataHeader.p_filesz;
             relocHeader.p_vaddr = 0;
             relocHeader.p_paddr = 0;
             relocHeader.p_filesz = relocSize;
@@ -1458,11 +1627,18 @@ namespace SRA_Assembler
                     fwrite.Write(HeaderUtils.GetBytes(elfHeader));
                     fwrite.Write(HeaderUtils.GetBytes(textHeader));
                     fwrite.Write(HeaderUtils.GetBytes(dataHeader));
+                    fwrite.Write(HeaderUtils.GetBytes(ktextHeader));
+                    fwrite.Write(HeaderUtils.GetBytes(kdataHeader));
                     fwrite.Write(HeaderUtils.GetBytes(relocHeader));
                     fwrite.Write(HeaderUtils.GetBytes(symHeader));
 
                     fwrite.Write(textBin, 0, (int)textSize);
                     fwrite.Write(dataBin, 0, (int)dataSize);
+
+                    fwrite.Write(ktextStartBin, 0, (int)ktextStartSize);
+                    fwrite.Write(ktextBin, 0, (int)ktextSize);
+                    fwrite.Write(kdataBin, 0, (int)kdataSize);
+
                     fwrite.Write(relocBin, 0, (int)relocSize);
                     fwrite.Write(symBin, 0, (int)symSize);
                 }
