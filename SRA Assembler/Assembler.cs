@@ -23,7 +23,11 @@ namespace SRA_Assembler
         IFormatImm, JFormatAddr, EIFormatImm,
 
         // address of LA instruction.
-        LAAddress
+        LAAddress,
+
+        // For kernel section instructions
+        KIFormatImm, KJFormatAddr, KEIFormatImm,
+        KLAAddress,
     }
 
     public struct SymbolTableElement
@@ -588,7 +592,7 @@ namespace SRA_Assembler
             ulong ktextSize = 0U;
             ulong ktextStartSize = 0U;
             uint ktextType = ProgramHeader.PT_KLOAD;
-            ulong ktextStartAddr = 0x0080_0000_0000U;
+            ulong ktextStartAddr = KTEXT_START;
 
             using (StreamReader fread = new StreamReader(inputFile))
             {
@@ -722,6 +726,11 @@ namespace SRA_Assembler
                                         ktextType = ProgramHeader.PT_KLOADSTART;
                                         ktextStartAddr = LiteralToDword(address, line, flineOriginal);
                                         currSegment = Segment.KTextStart;
+
+                                        if (ktextStartAddr % 4 != 0)
+                                        {
+                                            throw new Exception($"{MakeError(line, flineOriginal)}: address of .ktext should be multiple of 4");
+                                        }
                                     }
                                 }
                                 else
@@ -809,6 +818,12 @@ namespace SRA_Assembler
                                         ktextType = ProgramHeader.PT_KLOADSTART;
                                         ktextStartAddr = LiteralToDword(args[1], line, flineOriginal);
                                         currSegment = Segment.KTextStart;
+
+
+                                        if (ktextStartAddr % 4 != 0)
+                                        {
+                                            throw new Exception($"{MakeError(line, flineOriginal)}: address of .ktext should be multiple of 4");
+                                        }
                                     }
                                     else
                                     {
@@ -1228,17 +1243,21 @@ namespace SRA_Assembler
                             }
                             else if (currSegment == Segment.Text || currSegment == Segment.KText || currSegment == Segment.KTextStart)
                             {
+                                MemoryStream textStream;
                                 BinaryWriter textWriter;
                                 if (currSegment == Segment.Text)
                                 {
+                                    textStream = text;
                                     textWriter = twrite;
                                 }
                                 else if (currSegment == Segment.KText)
                                 {
+                                    textStream = ktextOther;
                                     textWriter = ktowrite;
                                 }
                                 else // currSegment == Segment.KTextStart
                                 {
+                                    textStream = ktextStart;
                                     textWriter = ktswrite;
                                 }
 
@@ -1312,6 +1331,12 @@ namespace SRA_Assembler
                                         ktextType = ProgramHeader.PT_KLOADSTART;
                                         ktextStartAddr = LiteralToDword(args[1], line, flineOriginal);
                                         currSegment = Segment.KTextStart;
+
+
+                                        if (ktextStartAddr % 4 != 0)
+                                        {
+                                            throw new Exception($"{MakeError(line, flineOriginal)}: address of .ktext should be multiple of 4");
+                                        }
                                     }
                                     else
                                     {
@@ -1363,7 +1388,7 @@ namespace SRA_Assembler
                                     try
                                     {
                                         InstructionSyntax syntax = new InstructionSyntax(code);
-                                        long pos = text.Position;
+                                        long pos = textStream.Position;
                                         if (pos % 4 != 0)
                                         {
                                             throw new Exception("Unknown error in text alignment");
@@ -1379,7 +1404,7 @@ namespace SRA_Assembler
                                                     relocationTable.Add(new RelocationTableElement(
                                                         (ulong)pos,
                                                         syntax.Imm,
-                                                        RelocationType.IFormatImm,
+                                                        currSegment == Segment.Text ? RelocationType.IFormatImm : RelocationType.KIFormatImm,
                                                         useExternLabel ? SymbolScope.Global : SymbolScope.Internal));
                                                 }
                                                 break;
@@ -1389,7 +1414,7 @@ namespace SRA_Assembler
                                                     relocationTable.Add(new RelocationTableElement(
                                                         (ulong)pos,
                                                         syntax.Addr,
-                                                        RelocationType.JFormatAddr,
+                                                        currSegment == Segment.Text ? RelocationType.JFormatAddr : RelocationType.KJFormatAddr,
                                                         useExternLabel ? SymbolScope.Global : SymbolScope.Internal));
                                                 }
                                                 break;
@@ -1399,7 +1424,7 @@ namespace SRA_Assembler
                                                     relocationTable.Add(new RelocationTableElement(
                                                         (ulong)pos,
                                                         syntax.Imm,
-                                                        RelocationType.EIFormatImm,
+                                                        currSegment == Segment.Text ? RelocationType.EIFormatImm : RelocationType.KEIFormatImm,
                                                         useExternLabel ? SymbolScope.Global : SymbolScope.Internal));
                                                 }
                                                 break;
@@ -1418,7 +1443,7 @@ namespace SRA_Assembler
                                                 relocationTable.Add(new RelocationTableElement(
                                                     (ulong)pos,
                                                     label,
-                                                    RelocationType.LAAddress,
+                                                    currSegment == Segment.Text ? RelocationType.LAAddress : RelocationType.KLAAddress,
                                                     useExternLabel ? SymbolScope.Global : SymbolScope.Internal));
                                             }
                                             else
