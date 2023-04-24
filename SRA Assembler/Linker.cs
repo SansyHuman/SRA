@@ -7,6 +7,10 @@ namespace SRA_Assembler
     {
         public byte[] Text;
         public byte[] Data;
+        public byte[] KText;
+        public byte[] KData;
+        public bool IsKTextStart;
+        public ulong KTextStartAddr;
         public List<RelocationTableElement> RelocTable;
         public Dictionary<string, SymbolTableElement> SymbolTable;
         public HashSet<string> GlobalSymbols;
@@ -80,8 +84,12 @@ namespace SRA_Assembler
 
                     ProgramHeader? textHeader = null;
                     ProgramHeader? dataHeader = null;
+                    ProgramHeader? ktextHeader = null;
+                    ProgramHeader? kdataHeader = null;
                     ProgramHeader? relocHeader = null;
                     ProgramHeader? symHeader = null;
+
+                    bool isKTextStart = false;
 
                     byte[] phBin = null;
                     fin.Position = (long)programHeaderStart;
@@ -111,6 +119,43 @@ namespace SRA_Assembler
                             {
                                 throw new Exception($"Error: input file {path} has wrong loadable segment flags.");
                             }
+                        }
+                        else if (pHeader.p_type == ProgramHeader.PT_KLOAD)
+                        {
+                            if (pHeader.p_flags == (ProgramHeader.PF_X | ProgramHeader.PF_R))
+                            {
+                                if (ktextHeader.HasValue)
+                                {
+                                    throw new Exception($"Error: input file {path} has multiple ktext segment.");
+                                }
+                                ktextHeader = pHeader;
+                            }
+                            else if (pHeader.p_flags == (ProgramHeader.PF_R | ProgramHeader.PF_W))
+                            {
+                                if (kdataHeader.HasValue)
+                                {
+                                    throw new Exception($"Error: input file {path} has multiple kdata segment.");
+                                }
+                                kdataHeader = pHeader;
+                            }
+                            else
+                            {
+                                throw new Exception($"Error: input file {path} has wrong loadable segment flags.");
+                            }
+                        }
+                        else if (pHeader.p_type == ProgramHeader.PT_KLOADSTART)
+                        {
+                            if (pHeader.p_flags != (ProgramHeader.PF_X | ProgramHeader.PF_R))
+                            {
+                                throw new Exception($"Error: input file {path} has wrong ktext segment flag.");
+                            }
+
+                            if (ktextHeader.HasValue)
+                            {
+                                throw new Exception($"Error: input file {path} has multiple ktext segment.");
+                            }
+                            ktextHeader = pHeader;
+                            isKTextStart = true;
                         }
                         else if (pHeader.p_type == ProgramHeader.PT_RELOCTABLE)
                         {
@@ -145,6 +190,21 @@ namespace SRA_Assembler
 
                     fin.Position = (long)dataStart;
                     objFile.Data = br.ReadBytes((int)dataSize);
+
+                    ulong ktextStart = ktextHeader.Value.p_offset;
+                    ulong ktextSize = ktextHeader.Value.p_filesz;
+
+                    fin.Position = (long)ktextStart;
+                    objFile.KText = br.ReadBytes((int)ktextSize);
+
+                    ulong kdataStart = kdataHeader.Value.p_offset;
+                    ulong kdataSize = kdataHeader.Value.p_filesz;
+
+                    fin.Position = (long)kdataStart;
+                    objFile.KData = br.ReadBytes((int)kdataSize);
+
+                    objFile.IsKTextStart = isKTextStart;
+                    objFile.KTextStartAddr = ktextHeader.Value.p_vaddr;
 
                     ulong relocStart = relocHeader.Value.p_offset;
 
@@ -263,18 +323,37 @@ namespace SRA_Assembler
 
             ulong[] dataStart = new ulong[objFiles.Count];
             ulong[] textStart = new ulong[objFiles.Count];
+            ulong[] kdataStart = new ulong[objFiles.Count];
+            ulong[] ktextStart = new ulong[objFiles.Count];
+
             ulong dataSize = 0U;
             ulong textSize = 0U;
+            ulong kdataSize = 0U;
+            ulong ktextSize = 0U;
+
+            int ktextStartIndex = -1;
+
+            for (int i = 0; i < objFiles.Count; i++)
+            {
+                if (objFiles[i].IsKTextStart)
+                {
+                    ktextStartIndex = i;
+                    break;
+                }
+            }
 
             dataStart[0] = Assembler.DATA_START;
             textStart[0] = Assembler.TEXT_START;
+            kdataStart[0] = Assembler.KDATA_START;
             dataSize += (ulong)objFiles[0].Data.Length;
             textSize += (ulong)objFiles[0].Text.Length;
+            kdataSize += (ulong)objFiles[0].KData.Length;
 
             for (int i = 1; i < objFiles.Count; i++)
             {
                 dataStart[i] = dataStart[i - 1] + (ulong)objFiles[i - 1].Data.Length;
                 textStart[i] = textStart[i - 1] + (ulong)objFiles[i - 1].Text.Length;
+                kdataStart[i] = kdataStart[i - 1] + (ulong)objFiles[i - 1].KData.Length;
 
                 // align data segments to 32-byte boundary
                 if (dataStart[i] % 32 != 0)
@@ -283,16 +362,58 @@ namespace SRA_Assembler
                     dataSize += (alignedDataStart - dataStart[i]);
                     dataStart[i] = alignedDataStart;
                 }
+                if (kdataStart[i] % 32 != 0)
+                {
+                    ulong alignedDataStart = 32 * (kdataStart[i] / 32 + 1);
+                    kdataSize += (alignedDataStart - kdataStart[i]);
+                    kdataStart[i] = alignedDataStart;
+                }
                 dataSize += (ulong)objFiles[i].Data.Length;
                 textSize += (ulong)objFiles[i].Text.Length;
+                kdataSize += (ulong)objFiles[i].KData.Length;
+            }
+
+            if (ktextStartIndex >= 0)
+            {
+                ktextStart[ktextStartIndex] = objFiles[ktextStartIndex].KTextStartAddr;
+                ktextSize += (ulong)objFiles[ktextStartIndex].KText.Length;
+
+                for (int i = 0; i < objFiles.Count; i++)
+                {
+                    if (i == ktextStartIndex)
+                    {
+                        continue;
+                    }
+
+                    ktextStart[i] = ktextSize + ktextStart[ktextStartIndex];
+                    ktextSize += (ulong)objFiles[i].KText.Length;
+                }
+            }
+            else
+            {
+                ktextStart[0] = Assembler.KTEXT_START;
+                ktextSize += (ulong)objFiles[0].KText.Length;
+
+                for (int i = 1; i < objFiles.Count; i++)
+                {
+                    ktextStart[i] = ktextStart[i - 1] + (ulong)objFiles[i - 1].KText.Length;
+
+                    ktextSize += (ulong)objFiles[i].KText.Length;
+                }
             }
 
             for (int i = 0; i < objFiles.Count; i++)
             {
                 byte[] text = objFiles[i].Text;
+                byte[] ktext = objFiles[i].KText;
+
                 MemoryStream textStream = new MemoryStream(text, true);
+                MemoryStream ktextStream = new MemoryStream(ktext, true);
+
                 BinaryReader textReader = new BinaryReader(textStream);
                 BinaryWriter textWriter = new BinaryWriter(textStream);
+                BinaryReader ktextReader = new BinaryReader(ktextStream);
+                BinaryWriter ktextWriter = new BinaryWriter(ktextStream);
 
                 var relocTable = objFiles[i].RelocTable;
                 foreach (var relocEntry in relocTable)
@@ -324,6 +445,14 @@ namespace SRA_Assembler
                                 {
                                     relocAddr += textStart[i];
                                 }
+                                else if (symbolEntry.Type == SymbolType.KData)
+                                {
+                                    relocAddr += kdataStart[i];
+                                }
+                                else if (symbolEntry.Type == SymbolType.KText)
+                                {
+                                    relocAddr += ktextStart[i];
+                                }
                                 else
                                 {
                                     throw new Exception($"Error: unknown symbol type in {inputs[i]} with label {label}");
@@ -348,6 +477,14 @@ namespace SRA_Assembler
                                 {
                                     relocAddr += textStart[symbolLocation];
                                 }
+                                else if (symbolEntry.Type == SymbolType.KData)
+                                {
+                                    relocAddr += kdataStart[symbolLocation];
+                                }
+                                else if (symbolEntry.Type == SymbolType.KText)
+                                {
+                                    relocAddr += ktextStart[symbolLocation];
+                                }
                                 else
                                 {
                                     throw new Exception($"Error: unknown symbol type in {inputs[i]} with label {label}");
@@ -361,29 +498,61 @@ namespace SRA_Assembler
                     switch (relocEntry.Type)
                     {
                         case RelocationType.IFormatImm: // branch target
-                            long distance = (long)relocAddr - ((long)pos + (long)textStart[i] + 4); // distance from next inst
-                            distance /= 4;
-                            if (!CheckSignedRange(distance, 15))
                             {
-                                throw new Exception($"Error: distance of label {label} is out of range in {inputs[i]}");
-                            }
-                            ulong distanceu = (ulong)distance;
-                            instruction |= (uint)(distanceu & 0b111_1111_1111_1111U);
+                                long distance = (long)relocAddr - ((long)pos + (long)textStart[i] + 4); // distance from next inst
+                                distance /= 4;
+                                if (!CheckSignedRange(distance, 15))
+                                {
+                                    throw new Exception($"Error: distance of label {label} is out of range in {inputs[i]}");
+                                }
+                                ulong distanceu = (ulong)distance;
+                                instruction |= (uint)(distanceu & 0b111_1111_1111_1111U);
 
-                            textStream.Position = (long)pos;
-                            textWriter.Write(instruction);
-                            break;
+                                textStream.Position = (long)pos;
+                                textWriter.Write(instruction);
+                                break;
+                            }
+                        case RelocationType.KIFormatImm:
+                            {
+                                long distance = (long)relocAddr - ((long)pos + (long)ktextStart[i] + 4); // distance from next inst
+                                distance /= 4;
+                                if (!CheckSignedRange(distance, 15))
+                                {
+                                    throw new Exception($"Error: distance of label {label} is out of range in {inputs[i]}");
+                                }
+                                ulong distanceu = (ulong)distance;
+                                instruction |= (uint)(distanceu & 0b111_1111_1111_1111U);
+
+                                ktextStream.Position = (long)pos;
+                                ktextWriter.Write(instruction);
+                                break;
+                            }
                         case RelocationType.JFormatAddr: // jump target
-                            ulong addr = relocAddr >> 2;
-                            if (!CheckJumpRange(pos, relocAddr))
                             {
-                                throw new Exception($"Error: position of jump label {label} is out of range in {inputs[i]}");
-                            }
-                            instruction |= (uint)(addr & 0x1FFFFFFU);
+                                ulong addr = relocAddr >> 2;
+                                if (!CheckJumpRange(pos + textStart[i], relocAddr))
+                                {
+                                    throw new Exception($"Error: position of jump label {label} is out of range in {inputs[i]}");
+                                }
+                                instruction |= (uint)(addr & 0x1FFFFFFU);
 
-                            textStream.Position = (long)pos;
-                            textWriter.Write(instruction);
-                            break;
+                                textStream.Position = (long)pos;
+                                textWriter.Write(instruction);
+                                break;
+                            }
+                        case RelocationType.KJFormatAddr:
+                            {
+                                ulong addr = relocAddr >> 2;
+                                if (!CheckJumpRange(pos + ktextStart[i], relocAddr))
+                                {
+                                    throw new Exception($"Error: position of jump label {label} is out of range in {inputs[i]}");
+                                }
+                                instruction |= (uint)(addr & 0x1FFFFFFU);
+
+                                ktextStream.Position = (long)pos;
+                                ktextWriter.Write(instruction);
+                                break;
+                            }
                         case RelocationType.LAAddress:
                             {
                                 for (int n = 0; n < 4; n++)
@@ -399,6 +568,21 @@ namespace SRA_Assembler
                                 }
                             }
                             break;
+                        case RelocationType.KLAAddress:
+                            {
+                                for (int n = 0; n < 4; n++)
+                                {
+                                    ktextStream.Position = (long)pos + 4 * n;
+                                    instruction = ktextReader.ReadUInt32();
+
+                                    uint imm = (uint)((relocAddr >> n * 16) & 0xFFFFU);
+                                    instruction |= imm;
+
+                                    ktextStream.Position = (long)pos + 4 * n;
+                                    ktextWriter.Write(instruction);
+                                }
+                            }
+                            break;
                         default:
                             throw new Exception($"Error: unknown relocation type in {inputs[i]} with label {label}");
                     }
@@ -409,7 +593,7 @@ namespace SRA_Assembler
             elfHeader.e_type = ELFHeader.ET_EXEC;
             elfHeader.e_entry = entrypoint - Assembler.TEXT_START + textStart[entrypointObj];
             elfHeader.e_phoff = elfHeader.e_ehsize;
-            elfHeader.e_phnum = 2; // text, data
+            elfHeader.e_phnum = 4; // text, data, ktext, kdata
 
             ProgramHeader textHeader = new ProgramHeader();
             textHeader.p_type = ProgramHeader.PT_LOAD;
@@ -431,6 +615,26 @@ namespace SRA_Assembler
             dataHeader.p_flags = ProgramHeader.PF_R | ProgramHeader.PF_W;
             dataHeader.p_align = 32;
 
+            ProgramHeader ktextHeader = new ProgramHeader();
+            ktextHeader.p_type = ProgramHeader.PT_KLOAD;
+            ktextHeader.p_offset = dataHeader.p_offset + dataHeader.p_filesz;
+            ktextHeader.p_vaddr = ktextStartIndex >= 0 ? ktextStart[ktextStartIndex] : Assembler.KTEXT_START;
+            ktextHeader.p_paddr = 0;
+            ktextHeader.p_filesz = ktextSize;
+            ktextHeader.p_memsz = ktextSize;
+            ktextHeader.p_flags = ProgramHeader.PF_X | ProgramHeader.PF_R;
+            ktextHeader.p_align = 4;
+
+            ProgramHeader kdataHeader = new ProgramHeader();
+            kdataHeader.p_type = ProgramHeader.PT_KLOAD;
+            kdataHeader.p_offset = ktextHeader.p_offset + ktextHeader.p_filesz;
+            kdataHeader.p_vaddr = Assembler.KDATA_START;
+            kdataHeader.p_paddr = 0;
+            kdataHeader.p_filesz = kdataSize;
+            kdataHeader.p_memsz = kdataSize;
+            kdataHeader.p_flags = ProgramHeader.PF_R | ProgramHeader.PF_W;
+            kdataHeader.p_align = 32;
+
             if (dataHeader.p_memsz % 32 != 0)
             {
                 dataHeader.p_memsz = 32 * (dataHeader.p_memsz / 32 + 1);
@@ -443,6 +647,8 @@ namespace SRA_Assembler
                     fwrite.Write(HeaderUtils.GetBytes(elfHeader));
                     fwrite.Write(HeaderUtils.GetBytes(textHeader));
                     fwrite.Write(HeaderUtils.GetBytes(dataHeader));
+                    fwrite.Write(HeaderUtils.GetBytes(ktextHeader));
+                    fwrite.Write(HeaderUtils.GetBytes(kdataHeader));
 
                     for (int i = 0; i < objFiles.Count; i++)
                     {
@@ -454,6 +660,24 @@ namespace SRA_Assembler
                     {
                         fout.Position = (long)(dataStart[i] - dataStart[0] + dataHeader.p_offset);
                         fwrite.Write(objFiles[i].Data);
+                    }
+
+                    ulong ktextStartAddr = Assembler.KTEXT_START;
+                    if (ktextStartIndex >= 0)
+                    {
+                        ktextStartAddr = ktextStart[ktextStartIndex];
+                    }
+
+                    for (int i = 0; i < objFiles.Count; i++)
+                    {
+                        fout.Position = (long)(ktextStart[i] - ktextStartAddr + ktextHeader.p_offset);
+                        fwrite.Write(objFiles[i].KText);
+                    }
+
+                    for (int i = 0; i < objFiles.Count; i++)
+                    {
+                        fout.Position = (long)(kdataStart[i] - kdataStart[0] + kdataHeader.p_offset);
+                        fwrite.Write(objFiles[i].KData);
                     }
 
                     if (fout.Length < fout.Position)
