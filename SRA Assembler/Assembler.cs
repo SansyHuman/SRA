@@ -4,12 +4,12 @@ namespace SRA_Assembler
 {
     public enum Segment
     {
-        Data, Text, Uninitialized
+        Data, Text, KData, KText, Uninitialized
     }
 
     public enum SymbolType
     {
-        Data, Text
+        Data, Text, KData, KText
     }
 
     public enum SymbolScope
@@ -61,6 +61,8 @@ namespace SRA_Assembler
     {
         public const ulong TEXT_START = 0x40_0000U;
         public const ulong DATA_START = 0x10_0000_0000U;
+        public const ulong KTEXT_START = 0x80_0000_0000U;
+        public const ulong KDATA_START = 0x1000_0000_0000U;
         public const ulong MIN_STATIC_SIZE = 0x1_0000U;
 
         static int FindLabelEndIndex(string code)

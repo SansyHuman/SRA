@@ -58,6 +58,7 @@ namespace SRA_Assembler
 
         public static readonly ISet<string> regs;
         public static readonly IDictionary<string, string> regAlts;
+        public static readonly IDictionary<string, string> kregAlts;
         public static readonly ISet<string> vregs;
 
         public static readonly ISet<string> loadStoreImmOps;
@@ -106,6 +107,16 @@ namespace SRA_Assembler
             regalt["%sp"] = "%29";
             regalt["%gp"] = "%30";
             regalt["%ra"] = "%31";
+
+            var kregalt = new Dictionary<string, string>();
+            InstructionSyntax.kregAlts = kregalt;
+
+            kregalt["%epc"] = "%1";
+            kregalt["%ie"] = "%2";
+            kregalt["%ip"] = "%3";
+            kregalt["%cause"] = "%4";
+            kregalt["%time"] = "%5";
+            kregalt["%timecmp"] = "%6";
 
             loadStoreImmOps = new HashSet<string>(new string[]
             {
@@ -246,6 +257,38 @@ namespace SRA_Assembler
                     }
                     RS = GetRegNumber(rs);
                 }
+                else if (Opcode == "krr") // op rd, krs
+                {
+                    string[] regs = inst.Substring(Opcode.Length).Trim()
+                        .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+                    if (regs.Length < 2)
+                    {
+                        throw new Exception($"Instruction {Opcode} does not have enough registers");
+                    }
+                    if (regs.Length > 2)
+                    {
+                        throw new Exception($"Instruction {Opcode} have more registers than needed");
+                    }
+
+                    RD = GetRegNumber(regs[0]);
+                    RS = GetKRegNumber(regs[1]);
+                }
+                else if (Opcode == "krw") // op krd, rs
+                {
+                    string[] regs = inst.Substring(Opcode.Length).Trim()
+                        .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+                    if (regs.Length < 2)
+                    {
+                        throw new Exception($"Instruction {Opcode} does not have enough registers");
+                    }
+                    if (regs.Length > 2)
+                    {
+                        throw new Exception($"Instruction {Opcode} have more registers than needed");
+                    }
+
+                    RD = GetKRegNumber(regs[0]);
+                    RS = GetRegNumber(regs[1]);
+                }
                 else // op rd, rs, rt
                 {
                     string[] regs = inst.Substring(Opcode.Length).Trim()
@@ -353,7 +396,8 @@ namespace SRA_Assembler
             }
             else if (InstData.jInsts.Contains(Opcode))
             {
-                if (Opcode == "syscall" || Opcode == "nop") // op
+                if (Opcode == "syscall" || Opcode == "nop" ||
+                    Opcode == "eret" || Opcode == "ecall") // op
                 {
                     string[] operands = inst.Substring(Opcode.Length).Trim()
                         .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
@@ -595,6 +639,21 @@ namespace SRA_Assembler
             }
 
             throw new Exception($"Register {reg} is not valid vector register name.");
+        }
+
+        public static string GetKRegNumber(string reg)
+        {
+            if (InstructionSyntax.regs.Contains(reg))
+            {
+                return reg.Substring(1);
+            }
+
+            if (InstructionSyntax.kregAlts.ContainsKey(reg))
+            {
+                return kregAlts[reg].Substring(1);
+            }
+
+            throw new Exception($"Register {reg} is not valid kernel register name.");
         }
 
         public static string CheckImmediateNum(string imm, bool intOnly)
