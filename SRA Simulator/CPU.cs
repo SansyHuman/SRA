@@ -131,7 +131,7 @@ namespace SRA_Simulator
                     lastSegmentEnd += segments[segments.Count - 1].p_memsz;
 
                     ProgramHeader heapSegment = new ProgramHeader();
-                    heapSegment.p_vaddr = lastSegmentEnd + (ulong)Random.Shared.NextInt64(0, 4096);
+                    heapSegment.p_vaddr = lastSegmentEnd + (ulong)System.Random.Shared.NextInt64(0, 4096);
                     if (heapSegment.p_vaddr % 32 != 0)
                     {
                         heapSegment.p_vaddr = (heapSegment.p_vaddr / 32 + 1) * 32;
@@ -298,6 +298,12 @@ namespace SRA_Simulator
             syscallTable[15] = WriteFile;
             syscallTable[16] = CloseFile;
             syscallTable[17] = Exit2;
+            syscallTable[18] = Lseek;
+            syscallTable[19] = Time;
+            syscallTable[20] = Nanosleep;
+            syscallTable[21] = PrintUTF8String;
+            syscallTable[22] = ReadUTF8String;
+            syscallTable[23] = Random;
         }
 
         public void LinkInstructions()
@@ -500,6 +506,11 @@ namespace SRA_Simulator
         }
 
         // syscall 1
+        /// <summary>
+        /// Print integer to standard output.
+        /// </summary>
+        /// <param name="value">integer to print</param>
+        /// <returns>0</returns>
         public ulong PrintInteger(ulong value, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
         {
             Console.Write(value);
@@ -507,6 +518,11 @@ namespace SRA_Simulator
         }
 
         // syscall 2
+        /// <summary>
+        /// Print single precision floating point number to standard output.
+        /// </summary>
+        /// <param name="value">single precision floating point number to print</param>
+        /// <returns>0</returns>
         public ulong PrintFloat(ulong value, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
         {
             float fvalue = BitConverter.Int32BitsToSingle((int)(uint)value);
@@ -515,6 +531,11 @@ namespace SRA_Simulator
         }
 
         // syscall 3
+        /// <summary>
+        /// Print double precision floating point number to standard output.
+        /// </summary>
+        /// <param name="value">double precision floating point number to print</param>
+        /// <returns>0</returns>
         public ulong PrintDouble(ulong value, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
         {
             double dvalue = BitConverter.Int64BitsToDouble((long)value);
@@ -523,6 +544,11 @@ namespace SRA_Simulator
         }
 
         // syscall 4
+        /// <summary>
+        /// Print string to standard output.
+        /// </summary>
+        /// <param name="straddr">address of null-terminated ASCII string</param>
+        /// <returns>0</returns>
         public ulong PrintString(ulong straddr, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
         {
             while (true)
@@ -540,12 +566,20 @@ namespace SRA_Simulator
         }
 
         // syscall 5
+        /// <summary>
+        /// Read an integer from standard input.
+        /// </summary>
+        /// <returns>integer read</returns>
         public ulong ReadInteger(ulong a0, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
         {
             return Convert.ToUInt64(Console.ReadLine(), 10);
         }
 
         // syscall 6
+        /// <summary>
+        /// Read a single precision floating point number from standard input.
+        /// </summary>
+        /// <returns>number read</returns>
         public unsafe ulong ReadFloat(ulong a0, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
         {
             float result = Convert.ToSingle(Console.ReadLine());
@@ -553,6 +587,10 @@ namespace SRA_Simulator
         }
 
         // syscall 7
+        /// <summary>
+        /// Read a double precision floating point number from standard input.
+        /// </summary>
+        /// <returns>number read</returns>
         public unsafe ulong ReadDouble(ulong a0, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
         {
             double result = Convert.ToDouble(Console.ReadLine());
@@ -560,7 +598,14 @@ namespace SRA_Simulator
         }
 
         // syscall 8
-        public unsafe ulong ReadString(ulong buf, ulong maxLen, ulong a2, ulong a3, ulong a4, ulong a5)
+        /// <summary>
+        /// Read a string from standard input and store null-terminated string into buffer.
+        /// Read until newline or maxLen - 1 characters read.
+        /// </summary>
+        /// <param name="buf">buffer to store the string</param>
+        /// <param name="maxLen">maximum length of the string to read</param>
+        /// <returns>0</returns>
+        public ulong ReadString(ulong buf, ulong maxLen, ulong a2, ulong a3, ulong a4, ulong a5)
         {
             if (maxLen < 1)
             {
@@ -597,7 +642,12 @@ namespace SRA_Simulator
         }
 
         // syscall 9
-        public unsafe ulong Sbrk(ulong size, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
+        /// <summary>
+        /// Change break point of heap segment.
+        /// </summary>
+        /// <param name="size">change of break point</param>
+        /// <returns>former break point if succeeded or -1 if failed</returns>
+        public ulong Sbrk(ulong size, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
         {
             if (size == 0)
             {
@@ -617,7 +667,10 @@ namespace SRA_Simulator
         }
 
         // syscall 10
-        public unsafe ulong Exit(ulong a0, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
+        /// <summary>
+        /// Exit the program.
+        /// </summary>
+        public ulong Exit(ulong a0, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
         {
             Exit(0);
 
@@ -625,14 +678,23 @@ namespace SRA_Simulator
         }
 
         // syscall 11
-        public unsafe ulong PrintCharacter(ulong ch, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
+        /// <summary>
+        /// Print a character to standard output.
+        /// </summary>
+        /// <param name="ch">character to print</param>
+        /// <returns>0</returns>
+        public ulong PrintCharacter(ulong ch, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
         {
             Console.Write((char)ch);
             return 0;
         }
 
         // syscall 12
-        public unsafe ulong ReadCharacter(ulong a0, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
+        /// <summary>
+        /// Read a character from standard input.
+        /// </summary>
+        /// <returns>read character</returns>
+        public ulong ReadCharacter(ulong a0, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
         {
             return (ulong)(long)Console.Read();
         }
@@ -647,7 +709,14 @@ namespace SRA_Simulator
         const ulong O_APPEND = 0x400UL;
 
         // syscall 13
-        public unsafe ulong OpenFile(ulong filename, ulong flags, ulong mode, ulong a3, ulong a4, ulong a5)
+        /// <summary>
+        /// Open a file.
+        /// </summary>
+        /// <param name="filename">address of filepath string</param>
+        /// <param name="flags">file open flags</param>
+        /// <param name="mode">not used in the virtual machine</param>
+        /// <returns>file descriptor if succeeded or -1 if failed</returns>
+        public ulong OpenFile(ulong filename, ulong flags, ulong mode, ulong a3, ulong a4, ulong a5)
         {
             StringBuilder sb = new StringBuilder();
             while (true)
@@ -737,9 +806,16 @@ namespace SRA_Simulator
         }
 
         // syscall 14
-        public unsafe ulong ReadFile(ulong descriptor, ulong buf, ulong maxCnt, ulong a3, ulong a4, ulong a5)
+        /// <summary>
+        /// Read data from file and store in the buffer.
+        /// </summary>
+        /// <param name="fd">file descriptor</param>
+        /// <param name="buf">buffer to store the data</param>
+        /// <param name="maxCnt">maximum number of bytes to read</param>
+        /// <returns>number of bytes read or -1 if failed</returns>
+        public ulong ReadFile(ulong fd, ulong buf, ulong maxCnt, ulong a3, ulong a4, ulong a5)
         {
-            if (descriptor == STDIN)
+            if (fd == STDIN)
             {
                 ulong cnt = 0;
                 while (cnt < maxCnt)
@@ -755,17 +831,17 @@ namespace SRA_Simulator
                 return cnt;
             }
             
-            if (descriptor == STDOUT || descriptor == STDERR)
+            if (fd == STDOUT || fd == STDERR)
             {
                 return unchecked((ulong)-1L);
             }
 
-            if (!openFiles.ContainsKey((long)descriptor))
+            if (!openFiles.ContainsKey((long)fd))
             {
                 return unchecked((ulong)-1L);
             }
 
-            FileStream stream = openFiles[(long)descriptor];
+            FileStream stream = openFiles[(long)fd];
 
             try
             {
@@ -789,16 +865,23 @@ namespace SRA_Simulator
         }
 
         // syscall 15
-        public unsafe ulong WriteFile(ulong descriptor, ulong buf, ulong cnt, ulong a3, ulong a4, ulong a5)
+        /// <summary>
+        /// Write data to file.
+        /// </summary>
+        /// <param name="fd">file descriptor</param>
+        /// <param name="buf">buffer containing data to write</param>
+        /// <param name="cnt">number of bytes to write</param>
+        /// <returns>number of bytes written or -1 if failed</returns>
+        public ulong WriteFile(ulong fd, ulong buf, ulong cnt, ulong a3, ulong a4, ulong a5)
         {
-            if (descriptor == STDIN)
+            if (fd == STDIN)
             {
                 return unchecked((ulong)-1L);
             }
 
-            if (descriptor == STDOUT || descriptor == STDERR)
+            if (fd == STDOUT || fd == STDERR)
             {
-                TextWriter writer = descriptor == STDOUT ? Console.Out : Console.Error;
+                TextWriter writer = fd == STDOUT ? Console.Out : Console.Error;
                 for (ulong i = 0; i < cnt; i++)
                 {
                     writer.Write((char)memory[buf + i]);
@@ -807,12 +890,12 @@ namespace SRA_Simulator
                 return cnt;
             }
 
-            if (!openFiles.ContainsKey((long)descriptor))
+            if (!openFiles.ContainsKey((long)fd))
             {
                 return unchecked((ulong)-1L);
             }
 
-            FileStream stream = openFiles[(long)descriptor];
+            FileStream stream = openFiles[(long)fd];
 
             try
             {
@@ -830,32 +913,236 @@ namespace SRA_Simulator
         }
 
         // syscall 16
-        public unsafe ulong CloseFile(ulong descriptor, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
+        /// <summary>
+        /// Close the file.
+        /// </summary>
+        /// <param name="fd">file descriptor</param>
+        /// <returns>0 if succeeded or -1 if failed</returns>
+        public ulong CloseFile(ulong fd, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
         {
-            if (descriptor == STDIN || descriptor == STDOUT || descriptor == STDERR)
+            if (fd == STDIN || fd == STDOUT || fd == STDERR)
             {
                 return unchecked((ulong)-1L);
             }
 
-            if (!openFiles.ContainsKey((long)descriptor))
+            if (!openFiles.ContainsKey((long)fd))
             {
                 return unchecked((ulong)-1L);
             }
 
-            FileStream stream = openFiles[(long)descriptor];
+            FileStream stream = openFiles[(long)fd];
             stream.Close();
 
-            openFiles.Remove((long)descriptor);
-            availableDescriptor.Enqueue((long)descriptor);
+            openFiles.Remove((long)fd);
+            availableDescriptor.Enqueue((long)fd);
 
             return 0;
         }
 
         // syscall 17
-        public unsafe ulong Exit2(ulong exitCode, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
+        /// <summary>
+        /// Exit the program with exit code.
+        /// </summary>
+        /// <param name="exitCode">exit code</param>
+        public ulong Exit2(ulong exitCode, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
         {
             Exit((long)exitCode);
             return 0;
+        }
+
+        const ulong SEEK_SET = 0;
+        const ulong SEEK_CUR = 1;
+        const ulong SEEK_END = 2;
+
+        // syscall 18
+        /// <summary>
+        /// Reposition file offset.
+        /// </summary>
+        /// <param name="fd">file descriptor</param>
+        /// <param name="offset">offset in bytes</param>
+        /// <param name="whence">reference point of the new offset</param>
+        /// <returns>new offset in bytes if succeeded or -1 if failed</returns>
+        public ulong Lseek(ulong fd, ulong offset, ulong whence, ulong a3, ulong a4, ulong a5)
+        {
+            if (fd == STDIN || fd == STDOUT || fd == STDERR)
+            {
+                return unchecked((ulong)-1L);
+            }
+
+            if (!openFiles.ContainsKey((long)fd))
+            {
+                return unchecked((ulong)-1L);
+            }
+
+            FileStream stream = openFiles[(long)fd];
+
+            SeekOrigin origin;
+            if (whence == SEEK_SET)
+            {
+                origin = SeekOrigin.Begin;
+            }
+            else if (whence == SEEK_CUR)
+            {
+                origin = SeekOrigin.Current;
+            }
+            else if (whence == SEEK_END)
+            {
+                origin = SeekOrigin.End;
+            }
+            else
+            {
+                return unchecked((ulong)-1L);
+            }
+
+            try
+            {
+                return (ulong)stream.Seek((long)offset, origin);
+            }
+            catch (Exception)
+            {
+                return unchecked((ulong)-1L);
+            }
+        }
+
+        // syscall 19
+        /// <summary>
+        /// Get current time in seconds.
+        /// </summary>
+        /// <param name="tloc">address to store the time if not null</param>
+        /// <returns>current unix time in seconds</returns>
+        public ulong Time(ulong tloc, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
+        {
+            long time = DateTimeOffset.Now.ToUnixTimeSeconds();
+            if (tloc != 0)
+            {
+                memory.SetDword(tloc, (ulong)time);
+            }
+
+            return (ulong)time;
+        }
+
+        // syscall 20
+        /// <summary>
+        /// Suspend the calling thread for specified seconds.
+        /// </summary>
+        /// <param name="req">address of timespec struct</param>
+        /// <returns>0 if succeeded or -1 if failed</returns>
+        public ulong Nanosleep(ulong req, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
+        {
+            long sec = (long)memory.GetDword(req);
+            long ns = (long)memory.GetDword(req + 8);
+            if (ns < 0 || ns > 999999999)
+            {
+                return unchecked((ulong)-1L);
+            }
+
+            long ticks = sec * TimeSpan.TicksPerSecond;
+            ticks += ns / TimeSpan.NanosecondsPerTick;
+            if (ns % TimeSpan.NanosecondsPerTick != 0)
+            {
+                ticks += 1;
+            }
+
+            try
+            {
+                Thread.Sleep(new TimeSpan(ticks));
+            }
+            catch (Exception)
+            {
+                return unchecked((ulong)-1L);
+            }
+
+            return 0;
+        }
+
+        // syscall 21
+        /// <summary>
+        /// Print UTF8 encoded string to standard output.
+        /// </summary>
+        /// <param name="len">byte length of the string</param>
+        /// <param name="str">address of utf-8 string</param>
+        /// <returns>0 if succeeded or -1 if failed</returns>
+        public ulong PrintUTF8String(ulong len, ulong str, ulong a2, ulong a3, ulong a4, ulong a5)
+        {
+            byte[] strbin = new byte[len];
+            memory.Copy(strbin, str);
+
+            try
+            {
+                string s = Encoding.UTF8.GetString(strbin);
+                Console.Write(s);
+            }
+            catch (Exception)
+            {
+                return unchecked((ulong)-1L);
+            }
+
+            return 0;
+        }
+
+        // syscall 22
+        /// <summary>
+        /// Read string from standard input until the newline or maximum bytes
+        /// and store in the buffer with UTF8 encoding.
+        /// </summary>
+        /// <param name="buf">buffer to store string</param>
+        /// <param name="maxLen">maximum number of bytes to read</param>
+        /// <returns>number of bytes read</returns>
+        public unsafe ulong ReadUTF8String(ulong buf, ulong maxLen, ulong a2, ulong a3, ulong a4, ulong a5)
+        {
+            if (maxLen < 1)
+            {
+                return 0;
+            }
+
+            Encoding enc = Encoding.UTF8;
+
+            ulong n = 0;
+            Span<byte> s = stackalloc byte[4];
+            fixed (byte* ps = s)
+            {
+                while (n < maxLen)
+                {
+                    int ch = Console.In.Peek();
+                    if (ch == -1)
+                    {
+                        break;
+                    }
+
+                    char cch = (char)ch;
+                    ulong cbytes = (ulong)(long)enc.GetBytes(&cch, 1, ps, 4);
+
+                    if (n + cbytes > maxLen)
+                    {
+                        break;
+                    }
+
+                    Console.In.Read();
+                    for (ulong i = 0; i < cbytes; i++)
+                    {
+                        memory[n + i] = s[(int)(long)i];
+                    }
+
+                    n += cbytes;
+
+                    if (cch == '\n')
+                    {
+                        break;
+                    }
+                }
+            }
+            
+            return n;
+        }
+
+        // syscall 23
+        /// <summary>
+        /// Get random integer
+        /// </summary>
+        /// <returns>random integer</returns>
+        public unsafe ulong Random(ulong a0, ulong a1, ulong a2, ulong a3, ulong a4, ulong a5)
+        {
+            return (ulong)System.Random.Shared.NextInt64(long.MinValue, long.MaxValue);
         }
 
         public static ulong SignExtendUint(uint value)

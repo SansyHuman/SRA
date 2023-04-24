@@ -341,6 +341,24 @@ namespace SRA_Simulator
                     memory[realAddr + i] = tmpMem[i];
                 }
             }
+
+            public void Copy(byte[] dst, ulong address)
+            {
+                if (!Access.HasFlag(MemoryAccess.Read))
+                {
+                    throw new Exception("Segmentation fault: cannot read this segment");
+                }
+
+                if (address < MinAddress | address + (ulong)(long)dst.Length - 1 > MaxAddress)
+                {
+                    throw new Exception("Segmentation fault: memory address out of range");
+                }
+
+                int realAddr = (int)(address - MinAddress);
+                SetCapacity(realAddr + dst.Length);
+
+                memory.CopyTo(realAddr, dst, 0, dst.Length);
+            }
         }
 
         internal readonly Segment[] segments;
@@ -514,6 +532,11 @@ namespace SRA_Simulator
         public void SetVector128<T>(ulong vaddr, Vector128<T> value) where T : struct
         {
             GetSegment(vaddr).SetVector128(vaddr, value);
+        }
+
+        public void Copy(byte[] dst, ulong vaddr)
+        {
+            GetSegment(vaddr).Copy(dst, vaddr);
         }
     }
 }
