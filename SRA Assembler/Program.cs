@@ -208,6 +208,7 @@ namespace SRA_Assembler
 
         static void Main(string[] args)
         {
+            /*
             try
             {
                 for (int i = 0; i < instSamples.Length; i++)
@@ -221,6 +222,7 @@ namespace SRA_Assembler
             { 
                 Console.WriteLine(e.Message);
             }
+            */
 
             // InstData.GetFormat("krr");
             // Assembler.AssembleObj("testinput.s", "testinput.o");

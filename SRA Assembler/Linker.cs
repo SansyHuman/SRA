@@ -47,7 +47,7 @@ namespace SRA_Assembler
                 throw new Exception($"Error: input file {inputPath} is not an object file.");
             }
 
-            if (header.e_phnum != 4)
+            if (header.e_phnum != 6)
             {
                 throw new Exception($"Error: input file {inputPath} has wrong number of segments.");
             }
