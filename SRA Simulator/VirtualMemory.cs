@@ -16,6 +16,11 @@ namespace SRA_Simulator
         Read = ProgramHeader.PF_R,
     }
 
+    public enum PrivilegeMode
+    {
+        Application = 0, Kernel = 1
+    }
+
     // little-endian virtual memory
     public class VirtualMemory
     {
@@ -26,6 +31,7 @@ namespace SRA_Simulator
             public readonly ulong MinAddress;
             private ulong maxAddress;
             public readonly MemoryAccess Access;
+            public readonly PrivilegeMode AccessLevel;
 
             private byte[] tmpMem = new byte[32];
 
@@ -42,7 +48,7 @@ namespace SRA_Simulator
                 get => MaxAddress - MinAddress + 1;
             }
 
-            public Segment(ulong startAddress, int maxSize, int initialSize, MemoryAccess access)
+            public Segment(ulong startAddress, int maxSize, int initialSize, MemoryAccess access, PrivilegeMode accessLevel)
             {
                 if (maxSize < 0)
                 {
@@ -59,9 +65,10 @@ namespace SRA_Simulator
                 MinAddress = startAddress;
                 MaxAddress = MinAddress + (ulong)maxSize - 1;
                 Access = access;
+                AccessLevel = accessLevel;
             }
 
-            public Segment(ulong startAddress, int maxSize, byte[] initialData, MemoryAccess access)
+            public Segment(ulong startAddress, int maxSize, byte[] initialData, MemoryAccess access, PrivilegeMode accessLevel)
             {
                 if (maxSize < initialData.Length)
                 {
@@ -73,6 +80,7 @@ namespace SRA_Simulator
                 MinAddress = startAddress;
                 MaxAddress = MinAddress + (ulong)maxSize - 1;
                 Access = access;
+                AccessLevel = accessLevel;
             }
 
             // Set the minimal size of allocated memory to be larger than the capacity
@@ -362,10 +370,12 @@ namespace SRA_Simulator
         }
 
         internal readonly Segment[] segments;
+        internal readonly CPU connectedCPU;
 
-        public VirtualMemory(BinaryReader program, params ProgramHeader[] segmentInfos)
+        public VirtualMemory(CPU cpu, BinaryReader program, params ProgramHeader[] segmentInfos)
         {
             segments = new Segment[segmentInfos.Length];
+            connectedCPU = cpu;
 
             for (int i = 0; i < segmentInfos.Length; i++)
             {
@@ -379,16 +389,18 @@ namespace SRA_Simulator
                     }
                 }
 
+                PrivilegeMode level = header.p_type == ProgramHeader.PT_KLOAD ? PrivilegeMode.Kernel : PrivilegeMode.Application;
+
                 if (header.p_filesz > 0)
                 {
                     program.BaseStream.Position = (long)header.p_offset;
                     byte[] bin = program.ReadBytes((int)header.p_filesz);
 
-                    segments[i] = new Segment(header.p_vaddr, (int)header.p_memsz, bin, (MemoryAccess)header.p_flags);
+                    segments[i] = new Segment(header.p_vaddr, (int)header.p_memsz, bin, (MemoryAccess)header.p_flags, level);
                 }
                 else
                 {
-                    segments[i] = new Segment(header.p_vaddr, (int)header.p_memsz, 0, (MemoryAccess)header.p_flags);
+                    segments[i] = new Segment(header.p_vaddr, (int)header.p_memsz, 0, (MemoryAccess)header.p_flags, level);
                 }
             }
 
@@ -417,7 +429,13 @@ namespace SRA_Simulator
             {
                 Segment seg = segments[i];
                 if (vaddr >= seg.MinAddress && vaddr <= seg.MaxAddress)
+                {
+                    if ((int)connectedCPU.PrivilegeMode < (int)seg.AccessLevel)
+                    {
+                        throw new Exception("Segmentation fault: cannot access segment with current privilege mode");
+                    }
                     return seg;
+                }
             }
 
             throw new Exception("Segmentation fault: out of segment address range");

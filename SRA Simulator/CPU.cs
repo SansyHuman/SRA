@@ -37,13 +37,18 @@ namespace SRA_Simulator
     public class CPU
     {
         private Register registers = new Register();
+        private Register kregisters = new Register();
         private Vector256<ulong>[] vRegisters = new Vector256<ulong>[32];
+        private PrivilegeMode privilegeMode = PrivilegeMode.Application;
+        private PrivilegeMode prevPrivilegeMode = PrivilegeMode.Application;
         private ulong entry;
 
         private VirtualMemory memory;
         private VirtualMemory.Segment heapSegment;
         private VirtualMemory.Segment stackSegment;
+        private VirtualMemory.Segment kstackSegment;
         private VirtualMemory.Segment textSegment;
+        private VirtualMemory.Segment ktextSegment;
 
         private Dictionary<long, FileStream> openFiles;
         private Queue<long> availableDescriptor;
@@ -73,6 +78,7 @@ namespace SRA_Simulator
         public const ulong IMM15_SIGN_EXT = 0xFFFF_FFFF_FFFF_8000U;
         public const ulong IMM16_SIGN_EXT = 0xFFFF_FFFF_FFFF_0000U;
 
+        public PrivilegeMode PrivilegeMode => privilegeMode;
         public byte[] TextBinary => ((List<byte>)textSegment.Memory).ToArray();
         public ulong TextSegmentStart => textSegment.MinAddress;
         public ulong Entrypoint => entry;
@@ -103,7 +109,7 @@ namespace SRA_Simulator
                     byte[] elfBin = fread.ReadBytes(Marshal.SizeOf<ELFHeader>());
                     ELFHeader header = HeaderUtils.FromBytes<ELFHeader>(elfBin);
                     CheckELFHeader(header);
-                    List<ProgramHeader> segments = new List<ProgramHeader>(header.e_phnum + 2);
+                    List<ProgramHeader> segments = new List<ProgramHeader>(header.e_phnum + 3);
                     for (int i = 0; i < header.e_phnum; i++)
                     {
                         fin.Position = header.e_ehsize + header.e_phentsize * i;
@@ -131,6 +137,7 @@ namespace SRA_Simulator
                     lastSegmentEnd += segments[segments.Count - 1].p_memsz;
 
                     ProgramHeader heapSegment = new ProgramHeader();
+                    heapSegment.p_type = ProgramHeader.PT_LOAD;
                     heapSegment.p_vaddr = lastSegmentEnd + (ulong)System.Random.Shared.NextInt64(0, 4096);
                     if (heapSegment.p_vaddr % 32 != 0)
                     {
@@ -145,19 +152,30 @@ namespace SRA_Simulator
                     ulong stackSegmentStart = stackSegmentEnd - stackSize + 1;
 
                     ProgramHeader stackSegment = new ProgramHeader();
+                    stackSegment.p_type = ProgramHeader.PT_LOAD;
                     stackSegment.p_vaddr = stackSegmentStart;
                     stackSegment.p_filesz = 0;
                     stackSegment.p_memsz = stackSize;
                     stackSegment.p_flags = ProgramHeader.PF_R | ProgramHeader.PF_W;
                     stackSegment.p_align = 0;
 
+                    ProgramHeader kstackSegment = new ProgramHeader();
+                    kstackSegment.p_type = ProgramHeader.PT_KLOAD;
+                    kstackSegment.p_vaddr = 0xFFFF_FFFF_FF80_0000;
+                    kstackSegment.p_filesz = 0;
+                    kstackSegment.p_memsz = 8UL * 1024 * 1024;
+                    kstackSegment.p_flags = ProgramHeader.PF_R | ProgramHeader.PF_W;
+                    kstackSegment.p_align = 0;
+
                     segments.Add(heapSegment);
                     segments.Add(stackSegment);
+                    segments.Add(kstackSegment);
 
-                    memory = new VirtualMemory(fread, segments.ToArray());
+                    memory = new VirtualMemory(this, fread, segments.ToArray());
                     for (int i = 0; i < memory.segments.Length; i++)
                     {
-                        if (this.heapSegment != null && this.stackSegment != null)
+                        if (this.heapSegment != null && this.stackSegment != null &&
+                            this.kstackSegment != null && this.ktextSegment != null)
                         {
                             break;
                         }
@@ -173,9 +191,23 @@ namespace SRA_Simulator
                             this.stackSegment = memory.segments[i];
                             continue;
                         }
+
+                        if (memory.segments[i].MinAddress == kstackSegment.p_vaddr)
+                        {
+                            this.kstackSegment = memory.segments[i];
+                            continue;
+                        }
+
+                        if (memory.segments[i].AccessLevel == PrivilegeMode.Kernel &&
+                            memory.segments[i].Access == (MemoryAccess.Execute | MemoryAccess.Read))
+                        {
+                            this.ktextSegment = memory.segments[i];
+                            continue;
+                        }
                     }
 
-                    if (this.heapSegment == null || this.stackSegment == null)
+                    if (this.heapSegment == null || this.stackSegment == null ||
+                        this.kstackSegment == null)
                     {
                         throw new Exception("No heap or stack allocated.");
                     }
@@ -187,6 +219,10 @@ namespace SRA_Simulator
                     Reset();
 
                     textSegment = memory.GetSegment(registers.PC);
+                    if (this.ktextSegment == null)
+                    {
+                        throw new Exception("No kernel text segment exists.");
+                    }
                 }
             }
         }
@@ -1756,17 +1792,19 @@ namespace SRA_Simulator
         }
 
         // Calls OS-implemented system services. The value in %ret is used as the service number.
-        // Values in %an are used as arguments.
+        // Values in %an are used as arguments. This instruction has no effect in kernel mode.
         private void syscall(uint addr)
         {
-            ulong service = registers[2];
-
-            if (!syscallTable.ContainsKey(service))
+            if (privilegeMode == PrivilegeMode.Kernel)
             {
-                throw new Exception($"Syscall error: no such service number {service}");
+                return;
             }
 
-            registers[2] = syscallTable[service](
+            ulong service = registers[2];
+
+            if (syscallTable.ContainsKey(service))
+            {
+                registers[2] = syscallTable[service](
                 registers[3],
                 registers[4],
                 registers[5],
@@ -1774,6 +1812,10 @@ namespace SRA_Simulator
                 registers[7],
                 registers[8]
                 );
+                return;
+            }
+
+            // TODO: Implement syscall exception. Implement interrupts.
         }
 
         // Does nothing.
@@ -2979,6 +3021,58 @@ namespace SRA_Simulator
             ReadOnlySpan<uint> sh = shuffle;
 
             vRegisters[rd] = Vector256.Create(sh).AsUInt64();
+        }
+
+        // Copies data in the kernel mode register krs to register rd. If the length of the krs is less
+        // than 64-bits, then fill upper bits to zero.
+        private void krr(int rs, int rt, int rd)
+        {
+            if (privilegeMode == PrivilegeMode.Application)
+            {
+                throw new Exception("Cannot execute privileged instruction");
+            }
+
+            registers[rd] = kregisters[rs];
+        }
+
+        // Copies data in the register rs to kernel mode register krd. If the length of the krd is less
+        // than 64-bits, then copies the lower bits of rs.
+        private void krw(int rs, int rt, int rd)
+        {
+            if (privilegeMode == PrivilegeMode.Application)
+            {
+                throw new Exception("Cannot execute privileged instruction");
+            }
+
+            kregisters[rd] = registers[rs];
+        }
+
+        // Sets %pc value to the value of %epc. Change privilege mode to previous mode.
+        private void eret(uint addr)
+        {
+            if (privilegeMode == PrivilegeMode.Application)
+            {
+                throw new Exception("Cannot execute privileged instruction");
+            }
+
+            registers.PC = kregisters[1]; // %1 == %epc
+            privilegeMode = prevPrivilegeMode;
+        }
+
+        // Sets %epc value to the value of %pc. Sets %pc value to the address of the
+        // trap handler. Change privilege mode to kernel mode. This instruction has no
+        // effect in kernel mode.
+        private void ecall(uint addr)
+        {
+            if (privilegeMode == PrivilegeMode.Kernel)
+            {
+                return;
+            }
+
+            kregisters[1] = registers.PC; // %1 == %epc
+            registers.PC = 0x0080_0000_0000U;
+            prevPrivilegeMode = privilegeMode;
+            privilegeMode = PrivilegeMode.Kernel;
         }
     }
 }
