@@ -67,5 +67,59 @@
                 lo = value;
             }
         }
+
+        public ulong EPC
+        {
+            get => registers[1];
+            internal set
+            {
+                registers[1] = value;
+            }
+        }
+
+        public uint IE
+        {
+            get => (uint)registers[2];
+            internal set
+            {
+                registers[2] = value;
+            }
+        }
+
+        public uint IP
+        {
+            get => (uint)registers[3];
+            internal set
+            {
+                registers[3] = value;
+            }
+        }
+
+        public uint Cause
+        {
+            get => (uint)registers[4];
+            internal set
+            {
+                registers[4] = value;
+            }
+        }
+
+        public ulong Time
+        {
+            get => registers[5];
+            internal set
+            {
+                registers[5] = value;
+            }
+        }
+
+        public ulong TimeCmp
+        {
+            get => registers[6];
+            internal set
+            {
+                registers[6] = value;
+            }
+        }
     }
 }

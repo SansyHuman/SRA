@@ -103,12 +103,12 @@ namespace SRA_Simulator
                 {
                     if (!Access.HasFlag(MemoryAccess.Read))
                     {
-                        throw new Exception("Segmentation fault: cannot read this segment");
+                        throw new TrapException("Segmentation fault: cannot read this segment", ExcCode.LoadAccessFault);
                     }
 
                     if (address < MinAddress | address > MaxAddress)
                     {
-                        throw new Exception("Segmentation fault: memory address out of range");
+                        throw new TrapException("Segmentation fault: memory address out of range", ExcCode.LoadAccessFault);
                     }
 
                     int realAddr = (int)(address - MinAddress);
@@ -120,12 +120,12 @@ namespace SRA_Simulator
                 {
                     if (!Access.HasFlag(MemoryAccess.Write))
                     {
-                        throw new Exception("Segmentation fault: cannot write to this segment");
+                        throw new TrapException("Segmentation fault: cannot write to this segment", ExcCode.StoreAccessFault);
                     }
 
                     if (address < MinAddress | address > MaxAddress)
                     {
-                        throw new Exception("Segmentation fault: memory address out of range");
+                        throw new TrapException("Segmentation fault: memory address out of range", ExcCode.StoreAccessFault);
                     }
 
                     int realAddr = (int)(address - MinAddress);
@@ -139,12 +139,12 @@ namespace SRA_Simulator
             {
                 if (!Access.HasFlag(MemoryAccess.Read))
                 {
-                    throw new Exception("Segmentation fault: cannot read this segment");
+                    throw new TrapException("Segmentation fault: cannot read this segment", ExcCode.LoadAccessFault);
                 }
 
                 if (address < MinAddress | address + 7 > MaxAddress)
                 {
-                    throw new Exception("Segmentation fault: memory address out of range");
+                    throw new TrapException("Segmentation fault: memory address out of range", ExcCode.LoadAccessFault);
                 }
 
                 int realAddr = (int)(address - MinAddress);
@@ -158,12 +158,12 @@ namespace SRA_Simulator
             {
                 if (!Access.HasFlag(MemoryAccess.Write))
                 {
-                    throw new Exception("Segmentation fault: cannot write this segment");
+                    throw new TrapException("Segmentation fault: cannot write to this segment", ExcCode.StoreAccessFault);
                 }
 
                 if (address < MinAddress | address + 7 > MaxAddress)
                 {
-                    throw new Exception("Segmentation fault: memory address out of range");
+                    throw new TrapException("Segmentation fault: memory address out of range", ExcCode.StoreAccessFault);
                 }
 
                 int realAddr = (int)(address - MinAddress);
@@ -180,12 +180,12 @@ namespace SRA_Simulator
             {
                 if (!Access.HasFlag(MemoryAccess.Read))
                 {
-                    throw new Exception("Segmentation fault: cannot read this segment");
+                    throw new TrapException("Segmentation fault: cannot read this segment", ExcCode.LoadAccessFault);
                 }
 
                 if (address < MinAddress | address + 3 > MaxAddress)
                 {
-                    throw new Exception("Segmentation fault: memory address out of range");
+                    throw new TrapException("Segmentation fault: memory address out of range", ExcCode.LoadAccessFault);
                 }
 
                 int realAddr = (int)(address - MinAddress);
@@ -199,12 +199,12 @@ namespace SRA_Simulator
             {
                 if (!Access.HasFlag(MemoryAccess.Write))
                 {
-                    throw new Exception("Segmentation fault: cannot write this segment");
+                    throw new TrapException("Segmentation fault: cannot write to this segment", ExcCode.StoreAccessFault);
                 }
 
                 if (address < MinAddress | address + 3 > MaxAddress)
                 {
-                    throw new Exception("Segmentation fault: memory address out of range");
+                    throw new TrapException("Segmentation fault: memory address out of range", ExcCode.StoreAccessFault);
                 }
 
                 int realAddr = (int)(address - MinAddress);
@@ -221,12 +221,12 @@ namespace SRA_Simulator
             {
                 if (!Access.HasFlag(MemoryAccess.Read))
                 {
-                    throw new Exception("Segmentation fault: cannot read this segment");
+                    throw new TrapException("Segmentation fault: cannot read this segment", ExcCode.LoadAccessFault);
                 }
 
                 if (address < MinAddress | address + 1 > MaxAddress)
                 {
-                    throw new Exception("Segmentation fault: memory address out of range");
+                    throw new TrapException("Segmentation fault: memory address out of range", ExcCode.LoadAccessFault);
                 }
 
                 int realAddr = (int)(address - MinAddress);
@@ -240,12 +240,12 @@ namespace SRA_Simulator
             {
                 if (!Access.HasFlag(MemoryAccess.Write))
                 {
-                    throw new Exception("Segmentation fault: cannot write this segment");
+                    throw new TrapException("Segmentation fault: cannot write to this segment", ExcCode.StoreAccessFault);
                 }
 
                 if (address < MinAddress | address + 1 > MaxAddress)
                 {
-                    throw new Exception("Segmentation fault: memory address out of range");
+                    throw new TrapException("Segmentation fault: memory address out of range", ExcCode.StoreAccessFault);
                 }
 
                 int realAddr = (int)(address - MinAddress);
@@ -262,22 +262,29 @@ namespace SRA_Simulator
             {
                 if (!Access.HasFlag(MemoryAccess.Execute))
                 {
-                    throw new Exception("Segmentation fault: cannot execute this segment");
+                    throw new TrapException("Segmentation fault: cannot execute this segment", ExcCode.InstAccessFault);
                 }
 
-                return GetWord(pc);
+                try
+                {
+                    return GetWord(pc);
+                }
+                catch (TrapException e)
+                {
+                    throw new TrapException(e.Message, ExcCode.InstAccessFault);
+                }
             }
 
             public Vector256<T> GetVector256<T>(ulong address) where T : struct
             {
                 if (!Access.HasFlag(MemoryAccess.Read))
                 {
-                    throw new Exception("Segmentation fault: cannot read this segment");
+                    throw new TrapException("Segmentation fault: cannot read this segment", ExcCode.LoadAccessFault);
                 }
 
                 if (address < MinAddress | address + 31 > MaxAddress)
                 {
-                    throw new Exception("Segmentation fault: memory address out of range");
+                    throw new TrapException("Segmentation fault: memory address out of range", ExcCode.LoadAccessFault);
                 }
 
                 int realAddr = (int)(address - MinAddress);
@@ -291,12 +298,12 @@ namespace SRA_Simulator
             {
                 if (!Access.HasFlag(MemoryAccess.Write))
                 {
-                    throw new Exception("Segmentation fault: cannot write this segment");
+                    throw new TrapException("Segmentation fault: cannot write to this segment", ExcCode.StoreAccessFault);
                 }
 
                 if (address < MinAddress | address + 31 > MaxAddress)
                 {
-                    throw new Exception("Segmentation fault: memory address out of range");
+                    throw new TrapException("Segmentation fault: memory address out of range", ExcCode.StoreAccessFault);
                 }
 
                 int realAddr = (int)(address - MinAddress);
@@ -313,12 +320,12 @@ namespace SRA_Simulator
             {
                 if (!Access.HasFlag(MemoryAccess.Read))
                 {
-                    throw new Exception("Segmentation fault: cannot read this segment");
+                    throw new TrapException("Segmentation fault: cannot read this segment", ExcCode.LoadAccessFault);
                 }
 
                 if (address < MinAddress | address + 15 > MaxAddress)
                 {
-                    throw new Exception("Segmentation fault: memory address out of range");
+                    throw new TrapException("Segmentation fault: memory address out of range", ExcCode.LoadAccessFault);
                 }
 
                 int realAddr = (int)(address - MinAddress);
@@ -332,12 +339,12 @@ namespace SRA_Simulator
             {
                 if (!Access.HasFlag(MemoryAccess.Write))
                 {
-                    throw new Exception("Segmentation fault: cannot write this segment");
+                    throw new TrapException("Segmentation fault: cannot write to this segment", ExcCode.StoreAccessFault);
                 }
 
                 if (address < MinAddress | address + 15 > MaxAddress)
                 {
-                    throw new Exception("Segmentation fault: memory address out of range");
+                    throw new TrapException("Segmentation fault: memory address out of range", ExcCode.StoreAccessFault);
                 }
 
                 int realAddr = (int)(address - MinAddress);
@@ -354,12 +361,12 @@ namespace SRA_Simulator
             {
                 if (!Access.HasFlag(MemoryAccess.Read))
                 {
-                    throw new Exception("Segmentation fault: cannot read this segment");
+                    throw new TrapException("Segmentation fault: cannot read this segment", ExcCode.LoadAccessFault);
                 }
 
                 if (address < MinAddress | address + (ulong)(long)dst.Length - 1 > MaxAddress)
                 {
-                    throw new Exception("Segmentation fault: memory address out of range");
+                    throw new TrapException("Segmentation fault: memory address out of range", ExcCode.LoadAccessFault);
                 }
 
                 int realAddr = (int)(address - MinAddress);
@@ -489,72 +496,170 @@ namespace SRA_Simulator
         {
             get
             {
-                return GetSegment(vaddr)[vaddr];
+                try
+                {
+                    return GetSegment(vaddr)[vaddr];
+                }
+                catch (Exception e)
+                {
+                    throw new TrapException(e.Message, ExcCode.LoadAccessFault);
+                }
             }
             set
             {
-                GetSegment(vaddr)[vaddr] = value;
+                try
+                {
+                    GetSegment(vaddr)[vaddr] = value;
+                }
+                catch (Exception e)
+                {
+                    throw new TrapException(e.Message, ExcCode.StoreAccessFault);
+                }
             }
         }
 
         public ulong GetDword(ulong vaddr)
         {
-            return GetSegment(vaddr).GetDword(vaddr);
+            try
+            {
+                return GetSegment(vaddr).GetDword(vaddr);
+            }
+            catch (Exception e)
+            {
+                throw new TrapException(e.Message, ExcCode.LoadAccessFault);
+            }
         }
 
         public void SetDword(ulong vaddr, ulong value)
         {
-            GetSegment(vaddr).SetDword(vaddr, value);
+            try
+            {
+                GetSegment(vaddr).SetDword(vaddr, value);
+            }
+            catch (Exception e)
+            {
+                throw new TrapException(e.Message, ExcCode.StoreAccessFault);
+            }
         }
 
         public uint GetWord(ulong vaddr)
         {
-            return GetSegment(vaddr).GetWord(vaddr);
+            try
+            {
+                return GetSegment(vaddr).GetWord(vaddr);
+            }
+            catch (Exception e)
+            {
+                throw new TrapException(e.Message, ExcCode.LoadAccessFault);
+            }
         }
 
         public void SetWord(ulong vaddr, uint value)
         {
-            GetSegment(vaddr).SetWord(vaddr, value);
+            try
+            {
+                GetSegment(vaddr).SetWord(vaddr, value);
+            }
+            catch (Exception e)
+            {
+                throw new TrapException(e.Message, ExcCode.StoreAccessFault);
+            }
         }
 
         public ushort GetHalf(ulong vaddr)
         {
-            return GetSegment(vaddr).GetHalf(vaddr);
+            try
+            {
+                return GetSegment(vaddr).GetHalf(vaddr);
+            }
+            catch (Exception e)
+            {
+                throw new TrapException(e.Message, ExcCode.LoadAccessFault);
+            }
         }
 
         public void SetHalf(ulong vaddr, ushort value)
         {
-            GetSegment(vaddr).SetHalf(vaddr, value);
+            try
+            {
+                GetSegment(vaddr).SetHalf(vaddr, value);
+            }
+            catch (Exception e)
+            {
+                throw new TrapException(e.Message, ExcCode.StoreAccessFault);
+            }
         }
 
         public uint GetInstruction(ulong pc)
         {
-            return GetSegment(pc).GetInstruction(pc);
+            try
+            {
+                return GetSegment(pc).GetInstruction(pc);
+            }
+            catch (Exception e)
+            {
+                throw new TrapException(e.Message, ExcCode.InstAccessFault);
+            }
         }
 
         public Vector256<T> GetVector256<T>(ulong vaddr) where T : struct
         {
-            return GetSegment(vaddr).GetVector256<T>(vaddr);
+            try
+            {
+                return GetSegment(vaddr).GetVector256<T>(vaddr);
+            }
+            catch (Exception e)
+            {
+                throw new TrapException(e.Message, ExcCode.LoadAccessFault);
+            }
         }
 
         public void SetVector256<T>(ulong vaddr, Vector256<T> value) where T : struct
         {
-            GetSegment(vaddr).SetVector256(vaddr, value);
+            try
+            {
+                GetSegment(vaddr).SetVector256(vaddr, value);
+            }
+            catch (Exception e)
+            {
+                throw new TrapException(e.Message, ExcCode.StoreAccessFault);
+            }
         }
 
         public Vector128<T> GetVector128<T>(ulong vaddr) where T : struct
         {
-            return GetSegment(vaddr).GetVector128<T>(vaddr);
+            try
+            {
+                return GetSegment(vaddr).GetVector128<T>(vaddr);
+            }
+            catch (Exception e)
+            {
+                throw new TrapException(e.Message, ExcCode.LoadAccessFault);
+            }
         }
 
         public void SetVector128<T>(ulong vaddr, Vector128<T> value) where T : struct
         {
-            GetSegment(vaddr).SetVector128(vaddr, value);
+            try
+            {
+                GetSegment(vaddr).SetVector128(vaddr, value);
+            }
+            catch (Exception e)
+            {
+                throw new TrapException(e.Message, ExcCode.StoreAccessFault);
+            }
         }
 
         public void Copy(byte[] dst, ulong vaddr)
         {
-            GetSegment(vaddr).Copy(dst, vaddr);
+            try
+            {
+                GetSegment(vaddr).Copy(dst, vaddr);
+            }
+            catch (Exception e)
+            {
+                throw new TrapException(e.Message, ExcCode.LoadAccessFault);
+            }
         }
     }
 }

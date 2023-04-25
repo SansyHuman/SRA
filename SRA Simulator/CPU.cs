@@ -1,5 +1,6 @@
 ﻿using SRA_Assembler;
 
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Reflection.PortableExecutable;
@@ -40,8 +41,10 @@ namespace SRA_Simulator
         private Register kregisters = new Register();
         private Vector256<ulong>[] vRegisters = new Vector256<ulong>[32];
         private PrivilegeMode privilegeMode = PrivilegeMode.Application;
-        private PrivilegeMode prevPrivilegeMode = PrivilegeMode.Application;
         private ulong entry;
+        public const ulong TRAP_HANDLER_START = 0x0080_0000_0000UL;
+
+        private long startTime;
 
         private VirtualMemory memory;
         private VirtualMemory.Segment heapSegment;
@@ -248,6 +251,8 @@ namespace SRA_Simulator
             BuildFileSystem();
 
             Console.Clear();
+
+            startTime = Stopwatch.GetTimestamp();
         }
 
         public unsafe void CheckELFHeader(in ELFHeader header)
@@ -447,79 +452,153 @@ namespace SRA_Simulator
             }
         }
 
+        const uint KSI_BIT = 1U << 6;
+        const uint KTI_BIT = 1U << 7;
+        const uint KEI_BIT = 1U << 8;
+        const uint INT_BIT = 1U << 31;
+
         public void Clock()
         {
-            uint inst = memory.GetInstruction(registers.PC);
-            registers.PC += 4;
-
-            uint opcode = (inst >> 25) & 0b111_1111U;
-            if (!opcodeFormats.ContainsKey(opcode))
+            if (privilegeMode != PrivilegeMode.Kernel) // interrupt handling
             {
-                throw new Exception("Unknown instruction");
+                uint ip = kregisters.IP;
+                uint ie = kregisters.IE;
+
+                if ((ip & KSI_BIT) != 0)
+                {
+                    kregisters.IP ^= KSI_BIT;
+                    if ((ie & KSI_BIT) != 0)
+                    {
+                        kregisters.EPC = registers.PC;
+                        registers.PC = TRAP_HANDLER_START;
+                        kregisters.Cause = (uint)ExcCode.KernelSoftwareInt;
+                        kregisters.Cause |= INT_BIT;
+                        privilegeMode = PrivilegeMode.Kernel;
+                        return;
+                    }
+                }
+
+                if ((ip & KTI_BIT) != 0)
+                {
+                    kregisters.IP ^= KTI_BIT;
+                    if ((ie & KTI_BIT) != 0)
+                    {
+                        kregisters.EPC = registers.PC;
+                        registers.PC = TRAP_HANDLER_START;
+                        kregisters.Cause = (uint)ExcCode.KernelTimerInt;
+                        kregisters.Cause |= INT_BIT;
+                        privilegeMode = PrivilegeMode.Kernel;
+                        return;
+                    }
+                }
+
+                if ((ip & KEI_BIT) != 0)
+                {
+                    kregisters.IP ^= KEI_BIT;
+                    if ((ie & KEI_BIT) != 0)
+                    {
+                        kregisters.EPC = registers.PC;
+                        registers.PC = TRAP_HANDLER_START;
+                        kregisters.Cause = (uint)ExcCode.KernelExternalInt;
+                        kregisters.Cause |= INT_BIT;
+                        privilegeMode = PrivilegeMode.Kernel;
+                        return;
+                    }
+                }
             }
 
-            InstructionFormat format = opcodeFormats[opcode];
-            switch (format)
+            try
             {
-                case InstructionFormat.R:
-                    {
-                        int rs = (int)((inst >> 20) & 0b1_1111U);
-                        int rt = (int)((inst >> 15) & 0b1_1111U);
-                        int rd = (int)((inst >> 10) & 0b1_1111U);
-                        uint func = inst & 0b11_1111_1111U;
+                ulong currPC = registers.PC;
+                registers.PC += 4;
+                uint inst = memory.GetInstruction(currPC);
 
-                        OpcodeFunc opfn = new OpcodeFunc(opcode, func);
-                        if (!rFunctions.ContainsKey(opfn))
+                uint opcode = (inst >> 25) & 0b111_1111U;
+                if (!opcodeFormats.ContainsKey(opcode))
+                {
+                    throw new TrapException("Unknown instruction", ExcCode.IllegalInstruction);
+                }
+
+                InstructionFormat format = opcodeFormats[opcode];
+                switch (format)
+                {
+                    case InstructionFormat.R:
                         {
-                            throw new Exception("Unknown instruction");
+                            int rs = (int)((inst >> 20) & 0b1_1111U);
+                            int rt = (int)((inst >> 15) & 0b1_1111U);
+                            int rd = (int)((inst >> 10) & 0b1_1111U);
+                            uint func = inst & 0b11_1111_1111U;
+
+                            OpcodeFunc opfn = new OpcodeFunc(opcode, func);
+                            if (!rFunctions.ContainsKey(opfn))
+                            {
+                                throw new TrapException("Unknown instruction", ExcCode.IllegalInstruction);
+                            }
+
+                            rFunctions[opfn](rs, rt, rd);
                         }
-
-                        rFunctions[opfn](rs, rt, rd);
-                    }
-                    break;
-                case InstructionFormat.I:
-                    {
-                        int rs = (int)((inst >> 20) & 0b1_1111U);
-                        int rt = (int)((inst >> 15) & 0b1_1111U);
-                        ushort imm = (ushort)(inst & 0b111_1111_1111_1111U);
-
-                        if (!iFunctions.ContainsKey(opcode))
+                        break;
+                    case InstructionFormat.I:
                         {
-                            throw new Exception("Unknown instruction");
+                            int rs = (int)((inst >> 20) & 0b1_1111U);
+                            int rt = (int)((inst >> 15) & 0b1_1111U);
+                            ushort imm = (ushort)(inst & 0b111_1111_1111_1111U);
+
+                            if (!iFunctions.ContainsKey(opcode))
+                            {
+                                throw new TrapException("Unknown instruction", ExcCode.IllegalInstruction);
+                            }
+
+                            iFunctions[opcode](rs, rt, imm);
                         }
-
-                        iFunctions[opcode](rs, rt, imm);
-                    }
-                    break;
-                case InstructionFormat.J:
-                    {
-                        uint addr = inst & 0x1FFFFFFU;
-
-                        if (!jFunctions.ContainsKey(opcode))
+                        break;
+                    case InstructionFormat.J:
                         {
-                            throw new Exception("Unknown instruction");
+                            uint addr = inst & 0x1FFFFFFU;
+
+                            if (!jFunctions.ContainsKey(opcode))
+                            {
+                                throw new TrapException("Unknown instruction", ExcCode.IllegalInstruction);
+                            }
+
+                            jFunctions[opcode](addr);
                         }
-
-                        jFunctions[opcode](addr);
-                    }
-                    break;
-                case InstructionFormat.EI:
-                    {
-                        int rd = (int)((inst >> 20) & 0b1_1111U);
-                        uint func = (inst >> 16) & 0b1111U;
-                        ushort imm = (ushort)(inst & 0xFFFFU);
-
-                        OpcodeFunc opfn = new OpcodeFunc(opcode, func);
-                        if (!eiFunctions.ContainsKey(opfn))
+                        break;
+                    case InstructionFormat.EI:
                         {
-                            throw new Exception("Unknown instruction");
-                        }
+                            int rd = (int)((inst >> 20) & 0b1_1111U);
+                            uint func = (inst >> 16) & 0b1111U;
+                            ushort imm = (ushort)(inst & 0xFFFFU);
 
-                        eiFunctions[opfn](rd, imm);
-                    }
-                    break;
-                default:
-                    throw new Exception("Unknown instruction");
+                            OpcodeFunc opfn = new OpcodeFunc(opcode, func);
+                            if (!eiFunctions.ContainsKey(opfn))
+                            {
+                                throw new TrapException("Unknown instruction", ExcCode.IllegalInstruction);
+                            }
+
+                            eiFunctions[opfn](rd, imm);
+                        }
+                        break;
+                    default:
+                        throw new TrapException("Unknown instruction", ExcCode.IllegalInstruction);
+                }
+            }
+            catch (TrapException e) // exception handling
+            {
+                kregisters.EPC = registers.PC;
+                registers.PC = TRAP_HANDLER_START;
+                kregisters.Cause = (uint)e.Code;
+                privilegeMode = PrivilegeMode.Kernel;
+            }
+
+            // interrupt processing
+            kregisters.Time = (ulong)(Stopwatch.GetElapsedTime(startTime).TotalNanoseconds / 100);
+            if ((kregisters.IE & KTI_BIT) != 0)
+            {
+                if (kregisters.Time >= kregisters.TimeCmp)
+                {
+                    kregisters.IP |= KTI_BIT;
+                }
             }
         }
 
@@ -1816,6 +1895,7 @@ namespace SRA_Simulator
             }
 
             // TODO: Implement syscall exception. Implement interrupts.
+            throw new TrapException("System call", ExcCode.SyscallApplication);
         }
 
         // Does nothing.
@@ -3029,7 +3109,7 @@ namespace SRA_Simulator
         {
             if (privilegeMode == PrivilegeMode.Application)
             {
-                throw new Exception("Cannot execute privileged instruction");
+                throw new TrapException("Cannot execute privileged instruction", ExcCode.IllegalInstruction);
             }
 
             registers[rd] = kregisters[rs];
@@ -3041,7 +3121,7 @@ namespace SRA_Simulator
         {
             if (privilegeMode == PrivilegeMode.Application)
             {
-                throw new Exception("Cannot execute privileged instruction");
+                throw new TrapException("Cannot execute privileged instruction", ExcCode.IllegalInstruction);
             }
 
             kregisters[rd] = registers[rs];
@@ -3052,11 +3132,11 @@ namespace SRA_Simulator
         {
             if (privilegeMode == PrivilegeMode.Application)
             {
-                throw new Exception("Cannot execute privileged instruction");
+                throw new TrapException("Cannot execute privileged instruction", ExcCode.IllegalInstruction);
             }
 
-            registers.PC = kregisters[1]; // %1 == %epc
-            privilegeMode = prevPrivilegeMode;
+            registers.PC = kregisters.EPC;
+            privilegeMode = PrivilegeMode.Application;
         }
 
         // Sets %epc value to the value of %pc. Sets %pc value to the address of the
@@ -3069,10 +3149,7 @@ namespace SRA_Simulator
                 return;
             }
 
-            kregisters[1] = registers.PC; // %1 == %epc
-            registers.PC = 0x0080_0000_0000U;
-            prevPrivilegeMode = privilegeMode;
-            privilegeMode = PrivilegeMode.Kernel;
+            throw new TrapException("ECALL instruction", ExcCode.EcallApplication);
         }
     }
 }
