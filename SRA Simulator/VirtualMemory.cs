@@ -4,6 +4,7 @@ using System.Net.Mail;
 using System;
 using System.Runtime.Intrinsics;
 using System.Text;
+using System.Numerics;
 
 namespace SRA_Simulator
 {
@@ -379,6 +380,11 @@ namespace SRA_Simulator
         internal readonly Segment[] segments;
         internal readonly CPU connectedCPU;
 
+        internal uint inputControl;
+        internal uint inputData;
+        internal uint outputControl;
+        internal uint outputData;
+
         public VirtualMemory(CPU cpu, BinaryReader program, params ProgramHeader[] segmentInfos)
         {
             segments = new Segment[segmentInfos.Length];
@@ -492,10 +498,93 @@ namespace SRA_Simulator
             return str.ToString();
         }
 
+        const ulong INPUT_CONTROL_ADDR = 0x0100;
+        const ulong INPUT_DATA_ADDR = 0x0104;
+        const ulong OUTPUT_CONTROL_ADDR = 0x0108;
+        const ulong OUTPUT_DATA_ADDR = 0x010c;
+
+        private bool ProcessMMIOLoad(ulong vaddr, out byte data)
+        {
+            if (vaddr == INPUT_CONTROL_ADDR)
+            {
+                data = (byte)(inputControl & 0xFFU);
+                return true;
+            }
+
+            if (vaddr == INPUT_DATA_ADDR)
+            {
+                if ((inputControl & 0x1U) == 1) // input is ready
+                {
+                    data = (byte)(inputData & 0xFF);
+                    inputControl ^= 0x1U;
+                }
+                else
+                {
+                    data = 0;
+                }
+
+                return true;
+            }
+
+            if (vaddr == OUTPUT_CONTROL_ADDR)
+            {
+                data = (byte)(outputControl & 0xFFU);
+                return true;
+            }
+
+            if (vaddr == OUTPUT_DATA_ADDR)
+            {
+                data = 0;
+                return true;
+            }
+
+            data = 0;
+            return false;
+        }
+
+        private bool ProcessMMIOStore(ulong vaddr, uint data)
+        {
+            if (vaddr == INPUT_CONTROL_ADDR)
+            {
+                inputControl = data & (~0x1U);
+                return true;
+            }
+
+            if (vaddr == INPUT_DATA_ADDR)
+            {
+                return true;
+            }
+
+            if (vaddr == OUTPUT_CONTROL_ADDR)
+            {
+                outputControl = data & (~0x1U);
+                return true;
+            }
+
+            if (vaddr == OUTPUT_DATA_ADDR)
+            {
+                if ((outputControl & 0x1U) == 1) // output is ready
+                {
+                    outputData = data & 0xFFU;
+                    outputControl ^= 0x1U;
+                    Console.Write((char)(outputData & 0xFFU));
+                    outputControl |= 0x1U;
+                }
+                return true;
+            }
+
+            return false;
+        }
+
         public byte this[ulong vaddr]
         {
             get
             {
+                if (ProcessMMIOLoad(vaddr, out byte data))
+                {
+                    return data;
+                }
+
                 try
                 {
                     return GetSegment(vaddr)[vaddr];
@@ -507,6 +596,11 @@ namespace SRA_Simulator
             }
             set
             {
+                if (ProcessMMIOStore(vaddr, value))
+                {
+                    return;
+                }
+
                 try
                 {
                     GetSegment(vaddr)[vaddr] = value;
@@ -544,6 +638,11 @@ namespace SRA_Simulator
 
         public uint GetWord(ulong vaddr)
         {
+            if (ProcessMMIOLoad(vaddr, out byte data))
+            {
+                return data;
+            }
+
             try
             {
                 return GetSegment(vaddr).GetWord(vaddr);
@@ -556,6 +655,11 @@ namespace SRA_Simulator
 
         public void SetWord(ulong vaddr, uint value)
         {
+            if (ProcessMMIOStore(vaddr, value))
+            {
+                return;
+            }
+
             try
             {
                 GetSegment(vaddr).SetWord(vaddr, value);
@@ -568,6 +672,11 @@ namespace SRA_Simulator
 
         public ushort GetHalf(ulong vaddr)
         {
+            if (ProcessMMIOLoad(vaddr, out byte data))
+            {
+                return data;
+            }
+
             try
             {
                 return GetSegment(vaddr).GetHalf(vaddr);
@@ -580,6 +689,11 @@ namespace SRA_Simulator
 
         public void SetHalf(ulong vaddr, ushort value)
         {
+            if (ProcessMMIOStore(vaddr, value))
+            {
+                return;
+            }
+
             try
             {
                 GetSegment(vaddr).SetHalf(vaddr, value);

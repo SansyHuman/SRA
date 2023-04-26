@@ -585,19 +585,53 @@ namespace SRA_Simulator
             }
             catch (TrapException e) // exception handling
             {
-                kregisters.EPC = registers.PC;
-                registers.PC = TRAP_HANDLER_START;
-                kregisters.Cause = (uint)e.Code;
-                privilegeMode = PrivilegeMode.Kernel;
+                if (privilegeMode != PrivilegeMode.Kernel)
+                {
+                    kregisters.EPC = registers.PC;
+                    registers.PC = TRAP_HANDLER_START;
+                    kregisters.Cause = (uint)e.Code;
+                    privilegeMode = PrivilegeMode.Kernel;
+                }
+                else
+                {
+                    throw e;
+                }
             }
 
-            // interrupt processing
+            // cpu tick update
             kregisters.Time = (ulong)(Stopwatch.GetElapsedTime(startTime).TotalNanoseconds / 100);
-            if ((kregisters.IE & KTI_BIT) != 0)
+
+            // input and output port check
+            int keyInput = -1;
+            if (Console.KeyAvailable)
+            {
+                keyInput = Console.ReadKey(true).KeyChar;
+            }
+
+            if ((memory.inputControl & 0x1U) == 0) // no input received before
+            {
+                if (keyInput != -1)
+                {
+                    memory.inputData = (byte)(uint)keyInput;
+                    memory.inputControl |= 0x1U;
+                }
+            }
+
+            if (privilegeMode != PrivilegeMode.Kernel) // interrupt processing
             {
                 if (kregisters.Time >= kregisters.TimeCmp)
                 {
                     kregisters.IP |= KTI_BIT;
+                }
+
+                if ((memory.inputControl & 0b11U) == 0b11U) // input is ready, interrupt enabled
+                {
+                    kregisters.IP |= KEI_BIT;
+                }
+
+                if ((memory.outputControl & 0b11U) == 0b11U) // output is ready, interrupt enabled
+                {
+                    kregisters.IP |= KEI_BIT;
                 }
             }
         }
