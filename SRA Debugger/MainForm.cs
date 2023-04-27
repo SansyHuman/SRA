@@ -11,8 +11,11 @@ namespace SRA_Debugger
         private CPU cpu;
         private ulong currMemAddr;
         private string[] asm;
+        private string[] kasm;
         private int[] instPos;
+        private int[] kinstPos;
         private ulong currInstIndex;
+        private bool isPrevInKText;
 
         VectorRegisterForm vectorRegShowWindow;
 
@@ -62,12 +65,25 @@ namespace SRA_Debugger
             }
 
             ulong currInstIndex = (cpu.Registers.PC - cpu.TextSegmentStart) / 4;
+            bool isInKText = false;
+            if (cpu.Registers.PC >= cpu.KTextSegmentStart)
+            {
+                currInstIndex = (cpu.Registers.PC - cpu.KTextSegmentStart) / 4;
+                isInKText = true;
+            }
 
             if (initialize)
             {
                 disassemble.Clear();
 
                 instPos = new int[asm.Length];
+                kinstPos = new int[kasm.Length];
+
+                disassemble.SelectionStart = disassemble.TextLength;
+                disassemble.SelectionLength = 0;
+                disassemble.SelectionColor = Color.DarkGray;
+                disassemble.AppendText("Application Text");
+                disassemble.AppendText(Environment.NewLine);
 
                 for (ulong i = 0; i < (ulong)asm.Length; i++)
                 {
@@ -77,7 +93,7 @@ namespace SRA_Debugger
                     disassemble.AppendText($"{cpu.TextSegmentStart + i * 4:x16}:\t\t");
 
                     instPos[i] = disassemble.TextLength;
-                    if (i == currInstIndex)
+                    if (!isInKText && i == currInstIndex)
                     {
                         disassemble.SelectionStart = disassemble.TextLength;
                         disassemble.SelectionLength = 0;
@@ -95,24 +111,106 @@ namespace SRA_Debugger
                     disassemble.AppendText(Environment.NewLine);
                 }
 
-                disassemble.SelectionStart = instPos[currInstIndex];
-                disassemble.ScrollToCaret();
+                disassemble.AppendText(Environment.NewLine);
+                disassemble.SelectionStart = disassemble.TextLength;
+                disassemble.SelectionLength = 0;
+                disassemble.SelectionColor = Color.DarkGray;
+                disassemble.AppendText("Kernel Text");
+                disassemble.AppendText(Environment.NewLine);
+
+                for (ulong i = 0; i < (ulong)kasm.Length; i++)
+                {
+                    disassemble.SelectionStart = disassemble.TextLength;
+                    disassemble.SelectionLength = 0;
+                    disassemble.SelectionColor = Color.Gray;
+                    disassemble.AppendText($"{cpu.KTextSegmentStart + i * 4:x16}:\t\t");
+
+                    kinstPos[i] = disassemble.TextLength;
+                    if (isInKText && i == currInstIndex)
+                    {
+                        disassemble.SelectionStart = disassemble.TextLength;
+                        disassemble.SelectionLength = 0;
+                        disassemble.SelectionColor = Color.DarkRed;
+                        disassemble.AppendText(kasm[i]);
+                    }
+                    else
+                    {
+                        disassemble.SelectionStart = disassemble.TextLength;
+                        disassemble.SelectionLength = 0;
+                        disassemble.SelectionColor = Color.Black;
+                        disassemble.AppendText(kasm[i]);
+                    }
+
+                    disassemble.AppendText(Environment.NewLine);
+                }
+
+                if (isInKText)
+                {
+                    if (currInstIndex < (ulong)(long)kasm.Length)
+                    {
+                        disassemble.SelectionStart = kinstPos[currInstIndex];
+                        disassemble.ScrollToCaret();
+                    }
+                }
+                else
+                {
+                    if (currInstIndex < (ulong)(long)asm.Length)
+                    {
+                        disassemble.SelectionStart = instPos[currInstIndex];
+                        disassemble.ScrollToCaret();
+                    }
+                }
+
             }
             else
             {
-                disassemble.SelectionStart = instPos[this.currInstIndex];
-                disassemble.SelectionLength = asm[this.currInstIndex].Length;
-                disassemble.SelectionColor = Color.Black;
+                if (isPrevInKText)
+                {
+                    if (this.currInstIndex < (ulong)(long)kasm.Length)
+                    {
+                        disassemble.SelectionStart = kinstPos[this.currInstIndex];
+                        disassemble.SelectionLength = kasm[this.currInstIndex].Length;
+                        disassemble.SelectionColor = Color.Black;
+                    }
+                }
+                else
+                {
+                    if (this.currInstIndex < (ulong)(long)asm.Length)
+                    {
+                        disassemble.SelectionStart = instPos[this.currInstIndex];
+                        disassemble.SelectionLength = asm[this.currInstIndex].Length;
+                        disassemble.SelectionColor = Color.Black;
+                    }
+                }
 
-                disassemble.SelectionStart = instPos[currInstIndex];
-                disassemble.SelectionLength = asm[currInstIndex].Length;
-                disassemble.SelectionColor = Color.DarkRed;
+                if (isInKText)
+                {
+                    if (currInstIndex < (ulong)(long)kasm.Length)
+                    {
+                        disassemble.SelectionStart = kinstPos[currInstIndex];
+                        disassemble.SelectionLength = kasm[currInstIndex].Length;
+                        disassemble.SelectionColor = Color.DarkRed;
 
-                disassemble.SelectionStart = instPos[currInstIndex];
-                disassemble.ScrollToCaret();
+                        disassemble.SelectionStart = kinstPos[currInstIndex];
+                        disassemble.ScrollToCaret();
+                    }
+                }
+                else
+                {
+                    if (currInstIndex < (ulong)(long)asm.Length)
+                    {
+                        disassemble.SelectionStart = instPos[currInstIndex];
+                        disassemble.SelectionLength = asm[currInstIndex].Length;
+                        disassemble.SelectionColor = Color.DarkRed;
+
+                        disassemble.SelectionStart = instPos[currInstIndex];
+                        disassemble.ScrollToCaret();
+                    }
+                }
             }
 
             this.currInstIndex = currInstIndex;
+            isPrevInKText = isInKText;
         }
 
         private void ShowRegisters()
@@ -211,6 +309,7 @@ namespace SRA_Debugger
                         cpu = new CPU(filename, stackSize);
                         cpu.TerminateOnExit = false;
                         asm = Disassembler.Disassemble(cpu.TextBinary, cpu.TextSegmentStart);
+                        kasm = Disassembler.Disassemble(cpu.KTextBinary, cpu.KTextSegmentStart);
 
                         if (vectorRegShowWindow != null && !vectorRegShowWindow.IsDisposed)
                         {

@@ -199,11 +199,36 @@ namespace SRA_Assembler
             "vsumf32.128 %v0, %v16",
             "vshuffle.64 %v5, %v2, %s5",
             "vshuffle.32 %v16, %v7, %s1",
+
+            "krr %t0, %cause",
+            "krw %epc, %t2",
+            "eret",
+            "ecall",
         };
 
         static void Main(string[] args)
         {
+            /*
+            try
+            {
+                for (int i = 0; i < instSamples.Length; i++)
+                {
+                    var inst = new InstructionSyntax(instSamples[i]);
+                    Console.WriteLine(inst.ToString());
+                    Console.WriteLine($"\t\t0x{inst.ToBinary():x8}");
+                }
+            }
+            catch (Exception e)
+            { 
+                Console.WriteLine(e.Message);
+            }
+            */
+
+            // InstData.GetFormat("krr");
             // Assembler.AssembleObj("testinput.s", "testinput.o");
+
+            // Assembler.AssembleObj("./guess/trap_handler.s", "./guess/trap_handler.o");
+            // Linker.Link(new string[] { "./guess/main.o", "./guess/rng.o", "./guess/trap_handler.o" }, "./guess/guess");
 
             List<string> inputs = new List<string>();
             string option = string.Empty;
@@ -290,22 +315,6 @@ namespace SRA_Assembler
                     return;
                 }
             }
-
-            /*
-            try
-            {
-                for (int i = 0; i < instSamples.Length; i++)
-                {
-                    var inst = new InstructionSyntax(instSamples[i]);
-                    Console.WriteLine(inst.ToString());
-                    Console.WriteLine($"\t\t0x{inst.ToBinary():x8}");
-                }
-            }
-            catch (Exception e)
-            { 
-                Console.WriteLine(e.Message);
-            }
-            */
 
             return;
         }

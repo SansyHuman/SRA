@@ -107,6 +107,8 @@ namespace SRA_Assembler
         public const uint PT_HIPROC = 0x7fffffff;
         public const uint PT_RELOCTABLE = PT_LOPROC;
         public const uint PT_SYMBOLTABLE = PT_RELOCTABLE + 1;
+        public const uint PT_KLOADSTART = PT_SYMBOLTABLE + 1; // .ktext with address
+        public const uint PT_KLOAD = PT_KLOADSTART + 1; // .ktext without address
 
         // p_flags flags
         public const uint PF_X = 0x1;
