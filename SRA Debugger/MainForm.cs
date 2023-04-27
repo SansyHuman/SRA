@@ -201,12 +201,6 @@ namespace SRA_Debugger
                 }
                 else
                 {
-                    if (this.currInstIndex < (ulong)(long)asm.Length)
-                    {
-                        disassemble.SelectionStart = instPos[this.currInstIndex];
-                        disassemble.SelectionLength = asm[this.currInstIndex].Length;
-                        disassemble.SelectionColor = Color.Black;
-                    }
                     if (currInstIndex < (ulong)(long)asm.Length)
                     {
                         disassemble.SelectionStart = instPos[this.currInstIndex];
