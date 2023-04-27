@@ -187,10 +187,6 @@ namespace SRA_Debugger
                 {
                     if (currInstIndex < (ulong)(long)kasm.Length)
                     {
-                        disassemble.SelectionStart = kinstPos[this.currInstIndex];
-                        disassemble.SelectionLength = kasm[this.currInstIndex].Length;
-                        disassemble.SelectionColor = Color.Black;
-
                         disassemble.SelectionStart = kinstPos[currInstIndex];
                         disassemble.SelectionLength = kasm[currInstIndex].Length;
                         disassemble.SelectionColor = Color.DarkRed;
@@ -203,10 +199,6 @@ namespace SRA_Debugger
                 {
                     if (currInstIndex < (ulong)(long)asm.Length)
                     {
-                        disassemble.SelectionStart = instPos[this.currInstIndex];
-                        disassemble.SelectionLength = asm[this.currInstIndex].Length;
-                        disassemble.SelectionColor = Color.Black;
-
                         disassemble.SelectionStart = instPos[currInstIndex];
                         disassemble.SelectionLength = asm[currInstIndex].Length;
                         disassemble.SelectionColor = Color.DarkRed;
