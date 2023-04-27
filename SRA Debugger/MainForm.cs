@@ -28,6 +28,12 @@ namespace SRA_Debugger
         [DllImport("kernel32.dll")]
         public static extern int FreeConsole();
 
+        private static string ToBinary(uint value)
+        {
+            string bin = Convert.ToString(value, 2);
+            return new string('0', 32 - bin.Length) + bin;
+        }
+
         public MainForm()
         {
             AllocConsole();
@@ -276,6 +282,36 @@ namespace SRA_Debugger
 
             str.Append("%pc:\t");
             str.Append(hexToolStripMenuItem.Checked ? $"{cpu.Registers.PC:x16}" : $"{(long)cpu.Registers.PC}");
+
+            str.Append("\t");
+
+            str.Append("%epc:\t");
+            str.Append(hexToolStripMenuItem.Checked ? $"{cpu.KRegisters.EPC:x16}" : $"{(long)cpu.KRegisters.EPC}");
+
+            str.AppendLine();
+
+            str.Append("%ie:\t");
+            str.Append(ToBinary(cpu.KRegisters.IE));
+
+            str.AppendLine();
+
+            str.Append("%ip:\t");
+            str.Append(ToBinary(cpu.KRegisters.IP));
+
+            str.AppendLine();
+
+            str.Append("%cause:\t");
+            str.Append($"Interrupt: {cpu.KRegisters.Cause >> 31}, ExcCode: {cpu.KRegisters.Cause << 1 >> 1}");
+
+            str.AppendLine();
+
+            str.Append("%time:\t");
+            str.Append($"{cpu.KRegisters.Time}");
+
+            str.Append("\t");
+
+            str.Append("%timecmp:\t");
+            str.Append($"{cpu.KRegisters.TimeCmp}");
 
             regDisplay.Text = str.ToString();
 

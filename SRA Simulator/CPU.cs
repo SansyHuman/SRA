@@ -88,6 +88,7 @@ namespace SRA_Simulator
         public ulong KTextSegmentStart => ktextSegment.MinAddress;
         public ulong Entrypoint => entry;
         public Register Registers => registers;
+        public Register KRegisters => kregisters;
         public ReadOnlySpan<Vector256<ulong>> VectorRegisters
         {
             get
@@ -237,6 +238,7 @@ namespace SRA_Simulator
             for (int i = 0; i < 32; i++)
             {
                 registers[i] = 0;
+                kregisters[i] = 0;
                 vRegisters[i] = Vector256.CreateScalar(0UL);
             }
 
@@ -247,6 +249,8 @@ namespace SRA_Simulator
             registers[28] = 0x0080_0000_0000UL; // frame pointer
             registers[29] = 0x007F_FFFF_FFF0UL; // stack pointer
             registers[30] = 0x0010_0000_8000UL; // global pointer
+
+            privilegeMode = PrivilegeMode.Application;
 
             exitCode = null;
 
