@@ -8,9 +8,9 @@ namespace SRA_Simulator
 {
     public enum ExcCode : uint
     {
-        KernelSoftwareInt = 6,
-        KernelTimerInt = 7,
-        KernelExternalInt = 8,
+        KernelSoftwareInt = 6 | (1U << 31),
+        KernelTimerInt = 7 | (1U << 31),
+        KernelExternalInt = 8 | (1U << 31),
         InstAccessFault = 0,
         LoadAccessFault = 1,
         StoreAccessFault = 2,

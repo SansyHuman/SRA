@@ -227,6 +227,9 @@ namespace SRA_Assembler
             // InstData.GetFormat("krr");
             // Assembler.AssembleObj("testinput.s", "testinput.o");
 
+            // Assembler.AssembleObj("./guess/trap_handler.s", "./guess/trap_handler.o");
+            // Linker.Link(new string[] { "./guess/main.o", "./guess/rng.o", "./guess/trap_handler.o" }, "./guess/guess");
+
             List<string> inputs = new List<string>();
             string option = string.Empty;
             string output = string.Empty;

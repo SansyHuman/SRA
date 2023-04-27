@@ -421,8 +421,25 @@ namespace SRA_Assembler
                     ulong pos = relocEntry.Position;
                     string label = relocEntry.Label;
 
-                    textStream.Position = (long)pos;
-                    uint instruction = textReader.ReadUInt32();
+                    uint instruction = 0U;
+
+                    switch (relocEntry.Type)
+                    {
+                        case RelocationType.IFormatImm:
+                        case RelocationType.JFormatAddr:
+                        case RelocationType.EIFormatImm:
+                        case RelocationType.LAAddress:
+                            textStream.Position = (long)pos;
+                            instruction = textReader.ReadUInt32();
+                            break;
+                        case RelocationType.KIFormatImm:
+                        case RelocationType.KJFormatAddr:
+                        case RelocationType.KEIFormatImm:
+                        case RelocationType.KLAAddress:
+                            ktextStream.Position = (long)pos;
+                            instruction = ktextReader.ReadUInt32();
+                            break;
+                    }
 
                     ulong relocAddr = 0U;
                     switch (relocEntry.LabelSearchLocation)

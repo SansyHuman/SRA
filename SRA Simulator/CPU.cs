@@ -83,7 +83,9 @@ namespace SRA_Simulator
 
         public PrivilegeMode PrivilegeMode => privilegeMode;
         public byte[] TextBinary => ((List<byte>)textSegment.Memory).ToArray();
+        public byte[] KTextBinary => ((List<byte>)ktextSegment.Memory).ToArray();
         public ulong TextSegmentStart => textSegment.MinAddress;
+        public ulong KTextSegmentStart => ktextSegment.MinAddress;
         public ulong Entrypoint => entry;
         public Register Registers => registers;
         public ReadOnlySpan<Vector256<ulong>> VectorRegisters
@@ -459,6 +461,7 @@ namespace SRA_Simulator
 
         public void Clock()
         {
+
             if (privilegeMode != PrivilegeMode.Kernel) // interrupt handling
             {
                 uint ip = kregisters.IP;
@@ -3174,13 +3177,13 @@ namespace SRA_Simulator
         }
 
         // Sets %epc value to the value of %pc. Sets %pc value to the address of the
-        // trap handler. Change privilege mode to kernel mode. This instruction has no
-        // effect in kernel mode.
+        // trap handler. Change privilege mode to kernel mode. This instruction will
+        // abort the program in kernel mode.
         private void ecall(uint addr)
         {
             if (privilegeMode == PrivilegeMode.Kernel)
             {
-                return;
+                throw new TrapException($"Abort program cause: {(ExcCode)kregisters.Cause}", (ExcCode)kregisters.Cause);
             }
 
             throw new TrapException("ECALL instruction", ExcCode.EcallApplication);

@@ -21,6 +21,7 @@ namespace SRA_Debugger
         public static readonly IReadOnlyDictionary<OpcodeFunc, string> opcodeToInst;
         public static readonly IReadOnlyDictionary<uint, InstructionFormat> opcodeFormats;
         public static readonly IReadOnlyDictionary<int, string> regnumToName;
+        public static readonly IReadOnlyDictionary<int, string> kregnumToName;
 
         public static readonly IReadOnlySet<string> unsignedImmInsts;
         public static readonly IReadOnlySet<string> hexImmInsts;
@@ -55,6 +56,14 @@ namespace SRA_Debugger
             foreach (var reg in InstructionSyntax.regAlts)
             {
                 regtoname[Convert.ToInt32(reg.Value.Substring(1), 10)] = reg.Key;
+            }
+
+            var kregtoname = new Dictionary<int, string>();
+            kregnumToName = kregtoname;
+
+            foreach (var reg in InstructionSyntax.kregAlts)
+            {
+                kregtoname[Convert.ToInt32(reg.Value.Substring(1), 10)] = reg.Key;
             }
 
             unsignedImmInsts = new HashSet<string>(new string[]
@@ -104,6 +113,14 @@ namespace SRA_Debugger
                             if (name == "jr" || name == "jalr") // op rs
                             {
                                 return $"{name} {regnumToName[rs]}";
+                            }
+                            else if (name == "krr") // op rd, krs
+                            {
+                                return $"{name} {regnumToName[rd]}, {kregnumToName.GetValueOrDefault(rs, $"%{rs}")}";
+                            }
+                            else if (name == "krw") // op krd, rs
+                            {
+                                return $"{name} {kregnumToName.GetValueOrDefault(rd, $"%{rd}")}, {regnumToName[rs]}";
                             }
                             else // op rd, rs, rt
                             {
@@ -196,7 +213,8 @@ namespace SRA_Debugger
 
                         string name = opcodeToInst[new OpcodeFunc(opcode, 0)];
 
-                        if (name == "syscall" || name == "nop") // op
+                        if (name == "syscall" || name == "nop" ||
+                            name == "eret" || name == "ecall") // op
                         {
                             return name;
                         }
