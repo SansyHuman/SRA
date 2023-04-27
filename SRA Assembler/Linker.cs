@@ -275,8 +275,8 @@ namespace SRA_Assembler
 
         static bool CheckJumpRange(ulong caller, ulong callee)
         {
-            ulong callerPC = (caller >> 2) & (~0x1FFFFFFU);
-            ulong calleePC = (callee >> 2) & (~0x1FFFFFFU);
+            ulong callerPC = (caller >> 2) & (~0x1FFFFFFUL);
+            ulong calleePC = (callee >> 2) & (~0x1FFFFFFUL);
             return callerPC == calleePC;
         }
 
