@@ -380,10 +380,10 @@ namespace SRA_Simulator
         internal readonly Segment[] segments;
         internal readonly CPU connectedCPU;
 
-        internal uint inputControl;
-        internal uint inputData;
-        internal uint outputControl;
-        internal uint outputData;
+        internal uint inputControl = 0U;
+        internal uint inputData = 0U;
+        internal uint outputControl = 1U;
+        internal uint outputData = 0U;
 
         public VirtualMemory(CPU cpu, BinaryReader program, params ProgramHeader[] segmentInfos)
         {
